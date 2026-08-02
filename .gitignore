@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+._*
+
+# Xcode user and build state
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Swift Package Manager local state
+.swiftpm/
+
+# Node/backend runtime
+node_modules/
+backend/data/
+backend/.env
+.env
+.env.*
+!.env.example
+
+# Generated delivery archives and screenshots
+deliverables/
+
+# Logs and temporary files
+*.log
+*.tmp
