@@ -10,6 +10,8 @@ A small read-only Plaid backend for Margin. The iOS app never receives Plaid sec
 - Every account/sync/disconnect route requires a signed user session.
 - Only `transactions` is requested. Transfer, payment, identity, investments, and liabilities permissions are not requested.
 - No access token, Plaid secret, or bank credential is returned to the app or written to logs.
+- When a bank login expires, sync returns 409 and the connection is flagged `requiresAttention`; `POST /v1/plaid/link-token` with `{ "itemId" }` returns an update-mode token to repair it.
+- `TOKEN_ENCRYPTION_KEY` is required in every environment, and `PLAID_ENV` must be `sandbox` or `production` (Plaid retired `development`).
 
 ## Local tests
 

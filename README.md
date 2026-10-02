@@ -69,7 +69,7 @@ npm test
 
 ## Bank connection production gate
 
-A live Bank of America connection requires a Plaid developer application, Production approval, an HTTPS backend deployment, and a real signed user session. Set `MARGIN_API_BASE_URL` to that deployment and provision the user session into iOS Keychain after authentication. Never place `PLAID_SECRET`, `MARGIN_JWT_SECRET`, or `TOKEN_ENCRYPTION_KEY` in the repository or iOS bundle.
+A live Bank of America connection requires a Plaid developer application, Production approval, an HTTPS backend deployment, and a real signed user session. Set the `MARGIN_API_BASE_URL` build setting (passed to the app through `ios/Margin/Info.plist`) to that deployment and provision the user session into iOS Keychain after authentication. Never place `PLAID_SECRET`, `MARGIN_JWT_SECRET`, or `TOKEN_ENCRYPTION_KEY` in the repository or iOS bundle.
 
 ## Privacy
 Budgeting remains local-first. When bank sync is enabled, only the selected account metadata and transaction data needed for budgeting crosses the authenticated backend. Margin requests Plaid's `transactions` product only—never payments, transfers, identity, or money movement.
