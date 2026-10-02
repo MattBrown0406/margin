@@ -96,4 +96,29 @@ import SwiftData
 
 extension Double {
     var money: String { formatted(.currency(code: "USD").precision(.fractionLength(0))) }
+    /// Exact amount for individual transactions, where rounding to whole dollars would misstate them.
+    var moneyExact: String { formatted(.currency(code: "USD")) }
+
+    /// Parses a typed amount such as "1,234.50", "$12" or "12,50" (comma-decimal locales),
+    /// rounded to cents. Returns nil for anything that is not a positive, finite number.
+    init?(moneyInput text: String, locale: Locale = .current) {
+        guard !text.contains("-"), !text.contains("−") else { return nil }
+        let decimal = locale.decimalSeparator ?? ".", grouping = locale.groupingSeparator ?? ","
+        let allowed = CharacterSet.decimalDigits.union(CharacterSet(charactersIn: decimal + grouping))
+        let cleaned = String(String.UnicodeScalarView(text.unicodeScalars.filter(allowed.contains)))
+        let formatter = NumberFormatter(); formatter.locale = locale; formatter.numberStyle = .decimal
+        guard let value = formatter.number(from: cleaned)?.doubleValue, value.isFinite, value > 0 else { return nil }
+        self = (value * 100).rounded() / 100
+    }
+}
+
+/// Categories offered for the business ledger. Personal categories come from the user's budget.
+let businessCategoryNames = ["Travel", "Lodging", "Meals", "Contractor", "Marketing", "Insurance", "Professional fees", "Other business"]
+
+extension Transaction {
+    /// Personal transfers recorded against an intervention's gross receipt (there can be several).
+    func netTransfers(in transactions: [Transaction]) -> [Transaction] {
+        guard incomeKind == "gross", let jobID else { return [] }
+        return transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.jobID == jobID }.sorted { $0.date < $1.date }
+    }
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Custom keys must live here: Xcode's generated Info.plist silently drops unknown INFOPLIST_KEY_* settings.
+	     Set the MARGIN_API_BASE_URL build setting to the HTTPS bank-service deployment. -->
+	<key>MARGIN_API_BASE_URL</key>
+	<string>$(MARGIN_API_BASE_URL)</string>
+</dict>
+</plist>

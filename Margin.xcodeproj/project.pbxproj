@@ -286,8 +286,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/Margin/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Margin;
-				INFOPLIST_KEY_MARGIN_API_BASE_URL = "https://api.example.com";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -295,6 +295,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARGIN_API_BASE_URL = "https://api.example.com";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -306,8 +307,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/Margin/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Margin;
-				INFOPLIST_KEY_MARGIN_API_BASE_URL = "https://api.example.com";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -315,6 +316,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARGIN_API_BASE_URL = "https://api.example.com";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
