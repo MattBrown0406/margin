@@ -159,6 +159,7 @@ struct BankAccountsView: View {
     @State private var reviewScopes: [String: String] = [:]
     @State private var reviewIncomeKinds: [String: String] = [:]
     @State private var reviewCategories: [String: String] = [:]
+    @State private var reviewJobs: [String: UUID] = [:]
     @State private var pendingDisconnect: BankConnectionDTO?
 
     /// Only transactions that still need a decision: not yet imported and not skipped.
@@ -206,11 +207,24 @@ struct BankAccountsView: View {
                                 VStack(alignment: .leading) { Text(tx.name).bold(); Text("\(tx.date)\(tx.pending ? " · Pending" : "")").font(.caption).foregroundStyle(.secondary) }
                                 Spacer(); Text((tx.amount < 0 ? "+" : "") + abs(tx.amount).moneyExact).bold()
                             }
+                            if let match = possibleDuplicate(of: tx) {
+                                Label("Possible duplicate of “\(match.title)” on \(match.date.formatted(date: .abbreviated, time: .omitted))", systemImage: "doc.on.doc").font(.caption.bold()).foregroundStyle(.orange)
+                            }
+                            if tx.amount > 0, ["TRANSFER_OUT", "LOAN_PAYMENTS"].contains(tx.category) {
+                                Label("Looks like a transfer or card payment. Skip it if the purchases are already counted.", systemImage: "arrow.left.arrow.right").font(.caption).foregroundStyle(.secondary)
+                            }
                             if tx.amount < 0 {
-                                Picker("Income type", selection: Binding(get: { reviewIncomeKind(tx) }, set: { reviewIncomeKinds[tx.id] = $0 })) {
-                                    Text("Gross → Business").tag("gross"); Text("Net → Personal").tag("net")
+                                Picker("Credit type", selection: Binding(get: { reviewIncomeKind(tx) }, set: { reviewIncomeKinds[tx.id] = $0 })) {
+                                    Text("Gross → Business").tag("gross"); Text("Net → Personal").tag("net"); Text("Refund").tag("refund")
                                 }.pickerStyle(.segmented)
-                            } else {
+                                if reviewIncomeKind(tx) == "net", !linkableJobs.isEmpty {
+                                    Picker("For job", selection: Binding(get: { reviewJobs[tx.id] }, set: { reviewJobs[tx.id] = $0 })) {
+                                        Text("Not linked").tag(UUID?.none)
+                                        ForEach(linkableJobs) { job in Text("\(job.title) · \(job.date.formatted(date: .abbreviated, time: .omitted))").tag(job.jobID) }
+                                    }
+                                }
+                            }
+                            if tx.amount > 0 || reviewIncomeKind(tx) == "refund" {
                                 Picker("Ledger", selection: Binding(get: { reviewScope(tx) }, set: { reviewScopes[tx.id] = $0; reviewCategories[tx.id] = nil })) {
                                     Text("Personal").tag("personal"); Text("Business").tag("business")
                                 }.pickerStyle(.segmented)
@@ -259,17 +273,33 @@ struct BankAccountsView: View {
         if let chosen = reviewCategories[tx.id], categoryOptions(for: scope).contains(chosen) { return chosen }
         return suggestedCategory(tx.category, scope: scope)
     }
+    /// Recent intervention receipts an imported Net transfer can be attached to.
+    private var linkableJobs: [Transaction] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .distantPast
+        return existing.filter { $0.isIncome && $0.incomeKind == "gross" && $0.jobID != nil && $0.date >= cutoff }.sorted { $0.date > $1.date }
+    }
+    /// Plaid ids change when a bank is reconnected, and manual entries have none, so also look for an
+    /// existing entry with the same amount within three days.
+    private func possibleDuplicate(of tx: ImportedBankTransaction) -> Transaction? {
+        guard let date = ISO8601DateFormatter.marginDate.date(from: tx.date) else { return nil }
+        return existing.first { $0.externalID != tx.id && abs(abs($0.amount) - abs(tx.amount)) < 0.005 && abs($0.date.timeIntervalSince(date)) <= 3 * 86_400 }
+    }
     private var skippedIDs: Set<String> { Set((try? JSONDecoder().decode([String].self, from: Data(skippedJSON.utf8))) ?? []) }
     private func skip(_ tx: ImportedBankTransaction) {
         if let data = try? JSONEncoder().encode(Array(skippedIDs.union([tx.id])).sorted()), let value = String(data: data, encoding: .utf8) { skippedJSON = value }
     }
     private func importTransaction(_ imported: ImportedBankTransaction) {
         guard !imported.pending, !existing.contains(where: { $0.externalID == imported.id }) else { return }
-        let isIncome = imported.amount < 0
-        let kind = isIncome ? reviewIncomeKind(imported) : nil
-        let scope = isIncome ? (kind == "gross" ? "business" : "personal") : reviewScope(imported)
-        let category = isIncome ? (kind == "gross" ? "Intervention income" : "Owner transfer") : reviewCategory(imported)
-        let tx = Transaction(title: imported.name, amount: abs(imported.amount), date: ISO8601DateFormatter.marginDate.date(from: imported.date) ?? .now, category: category, isIncome: isIncome, ledgerScope: scope, incomeKind: kind, jobID: isIncome ? UUID() : nil)
+        let creditKind = imported.amount < 0 ? reviewIncomeKind(imported) : nil
+        let date = ISO8601DateFormatter.marginDate.date(from: imported.date) ?? .now
+        let tx: Transaction
+        if let kind = creditKind, kind != "refund" {
+            let jobID = kind == "net" ? (reviewJobs[imported.id] ?? UUID()) : UUID()
+            tx = Transaction(title: imported.name, amount: abs(imported.amount), date: date, category: kind == "gross" ? "Intervention income" : "Owner transfer", isIncome: true, ledgerScope: kind == "gross" ? "business" : "personal", incomeKind: kind, jobID: jobID)
+        } else {
+            // A refund is stored as a negative expense so it reduces spending in its category.
+            tx = Transaction(title: imported.name, amount: creditKind == "refund" ? -abs(imported.amount) : imported.amount, date: date, category: reviewCategory(imported), ledgerScope: reviewScope(imported))
+        }
         tx.externalID = imported.id; tx.externalAccountID = imported.accountId; tx.isPending = false
         context.insert(tx); try? context.save()
     }
@@ -277,13 +307,23 @@ struct BankAccountsView: View {
     private var accountScopes: [String: String] {
         (try? JSONDecoder().decode([String: String].self, from: Data(accountScopesJSON.utf8))) ?? [:]
     }
-    private func accountScope(_ accountID: String) -> String { accountScopes[accountID] ?? "personal" }
+    /// Plaid account ids change when a bank is reconnected, so the ledger choice is also remembered by mask.
+    private func maskKey(_ accountID: String) -> String? {
+        model.connections.flatMap(\.accounts).first { $0.id == accountID }.flatMap { $0.mask.isEmpty ? nil : "mask:\($0.mask)" }
+    }
+    private func accountScope(_ accountID: String) -> String { accountScopes[accountID] ?? maskKey(accountID).flatMap { accountScopes[$0] } ?? "personal" }
     private func setAccountScope(_ accountID: String, _ scope: String) {
         var values = accountScopes; values[accountID] = scope
+        if let key = maskKey(accountID) { values[key] = scope }
         if let data = try? JSONEncoder().encode(values), let value = String(data: data, encoding: .utf8) { accountScopesJSON = value }
     }
     private func reviewScope(_ transaction: ImportedBankTransaction) -> String { reviewScopes[transaction.id] ?? accountScope(transaction.accountId) }
-    private func reviewIncomeKind(_ transaction: ImportedBankTransaction) -> String { reviewIncomeKinds[transaction.id] ?? (accountScope(transaction.accountId) == "business" ? "gross" : "net") }
+    /// Deposits Plaid marks as income or transfers default to Gross/Net by account; any other credit is a refund.
+    private func reviewIncomeKind(_ transaction: ImportedBankTransaction) -> String {
+        if let chosen = reviewIncomeKinds[transaction.id] { return chosen }
+        guard ["INCOME", "TRANSFER_IN"].contains(transaction.category) else { return "refund" }
+        return accountScope(transaction.accountId) == "business" ? "gross" : "net"
+    }
 }
 
 extension ISO8601DateFormatter {

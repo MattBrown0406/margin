@@ -133,3 +133,13 @@ test('tokens with a non-HS256 alg or a future nbf are rejected', async () => {
     }
   } finally { await f.close(); }
 });
+
+test('non-numeric exp and Object.prototype names are rejected or isolated', async () => {
+  const f = await fixture(new FakePlaid());
+  try {
+    const forever = signTestToken({ sub: 'matt', iss: 'margin-test', aud: 'margin-bank-api', exp: 'never' }, secret);
+    const proto = signTestToken({ sub: 'toString', iss: 'margin-test', aud: 'margin-bank-api', exp: Math.floor(Date.now() / 1000) + 300 }, secret);
+    for (const token of [forever, proto]) assert.equal((await fetch(`${f.base}/v1/plaid/accounts`, { headers: { authorization: `Bearer ${token}` } })).status, 401);
+    assert.equal((await f.request('/v1/plaid/sync', { method: 'POST', body: JSON.stringify({ itemId: 'toString' }) })).status, 404);
+  } finally { await f.close(); }
+});

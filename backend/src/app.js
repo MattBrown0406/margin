@@ -45,7 +45,7 @@ export function createApp({ config, plaid, store }) {
       if (req.method === 'POST' && pathname === '/v1/plaid/sync') {
         const input = await body(req), itemId = cleanText(input.itemId, 128);
         if (!itemId) throw httpError(400, 'itemId is required');
-        const user = await store.getUser(userId), item = user.items[itemId];
+        const user = await store.getUser(userId), item = Object.hasOwn(user.items, itemId) ? user.items[itemId] : undefined;
         if (!item) throw httpError(404, 'Bank connection not found');
         const accessToken = await store.getAccessToken(userId, itemId);
         let synced;

@@ -16,8 +16,8 @@ export function verifyBearerToken(header, secret, now = Date.now(), claims = {})
   let jose, payload;
   try { jose = JSON.parse(decode(head).toString('utf8')); payload = JSON.parse(decode(body).toString('utf8')); } catch { throw Object.assign(new Error('Invalid session token'), { status: 401 }); }
   if (jose?.alg !== 'HS256' || !payload || typeof payload !== 'object') throw Object.assign(new Error('Invalid session token'), { status: 401 });
-  if (!payload.sub || typeof payload.sub !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(payload.sub) || ['__proto__','constructor','prototype'].includes(payload.sub)) throw Object.assign(new Error('Invalid session subject'), { status: 401 });
-  if (!payload.exp || payload.exp * 1000 <= now) throw Object.assign(new Error('Session expired'), { status: 401 });
+  if (!payload.sub || typeof payload.sub !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(payload.sub) || ['__proto__','constructor','prototype'].includes(payload.sub) || payload.sub in Object.prototype) throw Object.assign(new Error('Invalid session subject'), { status: 401 });
+  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || payload.exp * 1000 <= now) throw Object.assign(new Error('Session expired'), { status: 401 });
   if (typeof payload.nbf === 'number' && payload.nbf * 1000 > now) throw Object.assign(new Error('Session not yet valid'), { status: 401 });
   if (claims.issuer && payload.iss !== claims.issuer) throw Object.assign(new Error('Invalid session issuer'), { status: 401 });
   const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];

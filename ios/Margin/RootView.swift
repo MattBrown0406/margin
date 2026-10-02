@@ -45,7 +45,7 @@ struct RootView: View {
         guard !seeded, transactions.isEmpty else { try? context.save(); return }
         let targetDate = Calendar.current.date(byAdding: .month, value: 8, to: .now)
         let seedCategories = [
-            BudgetCategory(name: "Giving", icon: "heart", monthlyLimit: 300, colorHex: "72BFA0", groupName: "Giving"),
+            BudgetCategory(name: "Giving", icon: "heart", monthlyLimit: 300, colorHex: "72BFA0", isFlexible: false, groupName: "Giving"),
             BudgetCategory(name: "Peace Number", icon: "shield.fill", monthlyLimit: 1050, colorHex: "72BFA0", isFlexible: false, groupName: "Saving & Funds", isFund: true, fundBalance: 12600, fundTarget: 25000, fundTargetDate: targetDate),
             BudgetCategory(name: "Car repairs", icon: "wrench.fill", monthlyLimit: 150, colorHex: "5F8FA3", isFlexible: false, groupName: "Saving & Funds", isFund: true, fundBalance: 620, fundTarget: 1800, fundTargetDate: Calendar.current.date(byAdding: .month, value: 10, to: .now)),
             BudgetCategory(name: "Mortgage", icon: "house.fill", monthlyLimit: 2650, colorHex: "264653", isFlexible: false, groupName: "Housing", dueDay: 3),
@@ -56,7 +56,7 @@ struct RootView: View {
             BudgetCategory(name: "Car insurance", icon: "car.fill", monthlyLimit: 250, colorHex: "2A9D8F", isFlexible: false, groupName: "Transportation", dueDay: 18),
             BudgetCategory(name: "Personal", icon: "person.fill", monthlyLimit: 350, colorHex: "F4A261", groupName: "Personal & Life"),
             BudgetCategory(name: "Fun money", icon: "sparkles", monthlyLimit: 300, colorHex: "E76F51", groupName: "Personal & Life"),
-            BudgetCategory(name: "Health", icon: "cross.case.fill", monthlyLimit: 450, colorHex: "6D597A", groupName: "Personal & Life"),
+            BudgetCategory(name: "Health", icon: "cross.case.fill", monthlyLimit: 450, colorHex: "6D597A", isFlexible: false, groupName: "Personal & Life"),
             BudgetCategory(name: "Tax reserve", icon: "percent", monthlyLimit: 850, colorHex: "6D597A", isFlexible: false, groupName: "Taxes", dueDay: 25)
         ]
         seedCategories.forEach(context.insert)
@@ -117,7 +117,7 @@ struct TodayView: View {
                 }.padding(22).background(Color.marginInk, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                 VStack(alignment: .leading, spacing: 12) {
                     HStack { Text("Personal spending this month").font(.headline); Spacer(); Text(monthExpenses.money).bold() }
-                    ProgressView(value: min(monthExpenses / max(1, categories.reduce(0) { $0 + $1.monthlyLimit }), 1)).tint(.marginLime).scaleEffect(y: 2)
+                    ProgressView(value: min(max(monthExpenses, 0) / max(1, categories.reduce(0) { $0 + $1.monthlyLimit }), 1)).tint(.marginLime).scaleEffect(y: 2)
                     Text("Business money stays separate until you record an actual Net transfer.").font(.subheadline).foregroundStyle(.secondary)
                 }.marginCard()
                 NavigationLink { BankAccountsView() } label: {
@@ -207,10 +207,13 @@ struct InterventionIncomeView: View {
     private func isThisMonth(_ date: Date) -> Bool { Calendar.current.isDate(date, equalTo: .now, toGranularity: .month) }
     /// This month's jobs, plus recent jobs still waiting on a personal transfer — otherwise a job paid
     /// late in a month vanishes on the 1st and its Net can never be recorded.
-    private var grossEntries: [Transaction] {
-        let awaitingCutoff = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .distantPast
-        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && (isThisMonth($0.date) || ($0.date >= awaitingCutoff && $0.netTransfers(in: transactions).isEmpty)) }.sorted { $0.date > $1.date }
+    private var recentGross: [Transaction] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .distantPast
+        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.date >= cutoff }.sorted { $0.date > $1.date }
     }
+    private var grossEntries: [Transaction] { recentGross.filter { isThisMonth($0.date) || $0.netTransfers(in: transactions).isEmpty } }
+    /// Older jobs that already have a transfer stay reachable so a later installment can be recorded.
+    private var earlierEntries: [Transaction] { recentGross.filter { !isThisMonth($0.date) && !$0.netTransfers(in: transactions).isEmpty } }
     private var gross: Double { month.filter { $0.isIncome && $0.incomeKind == "gross" }.reduce(0) { $0 + $1.amount } }
     private var net: Double { month.filter { $0.isIncome && $0.incomeKind == "net" }.reduce(0) { $0 + $1.amount } }
 
@@ -221,21 +224,26 @@ struct InterventionIncomeView: View {
                 IncomeTotalCard(title: "GROSS", amount: gross, note: "Received by business", dark: true)
                 IncomeTotalCard(title: "NET", amount: net, note: "Transferred personal", dark: false)
             }
-            ForEach(grossEntries) { job in
-                let transfers = job.netTransfers(in: transactions)
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack { VStack(alignment: .leading) { Text(job.title).font(.headline); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(job.amount.money).bold() }
-                    Divider()
-                    if !transfers.isEmpty {
-                        HStack { Label(transfers.count == 1 ? "Net transferred" : "Net transferred (\(transfers.count))", systemImage: "arrow.right.circle.fill"); Spacer(); Text(transfers.reduce(0) { $0 + $1.amount }.money).bold() }.foregroundStyle(.green)
-                        Button("Record another transfer") { selectedGross = job }.font(.caption.bold()).tint(.marginInk)
-                    } else {
-                        HStack { Text("No personal transfer recorded").font(.subheadline).foregroundStyle(.secondary); Spacer(); Button("Record Net") { selectedGross = job }.buttonStyle(.borderedProminent).tint(.marginInk) }
-                    }
-                }.marginCard()
-            }
+            ForEach(grossEntries) { jobCard($0) }
             if grossEntries.isEmpty { ContentUnavailableView("No intervention income", systemImage: "briefcase", description: Text("Use Add to record money when a job pays.")) }
+            if !earlierEntries.isEmpty {
+                DisclosureGroup("Earlier jobs (\(earlierEntries.count))") { VStack(spacing: 12) { ForEach(earlierEntries) { jobCard($0) } }.padding(.top, 8) }.tint(.marginInk)
+            }
         }.sheet(item: $selectedGross) { RecordNetTransferView(grossEntry: $0) }
+    }
+
+    private func jobCard(_ job: Transaction) -> some View {
+        let transfers = job.netTransfers(in: transactions)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack { VStack(alignment: .leading) { Text(job.title).font(.headline); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(job.amount.money).bold() }
+            Divider()
+            if !transfers.isEmpty {
+                HStack { Label(transfers.count == 1 ? "Net transferred" : "Net transferred (\(transfers.count))", systemImage: "arrow.right.circle.fill"); Spacer(); Text(transfers.reduce(0) { $0 + $1.amount }.money).bold() }.foregroundStyle(.green)
+                Button("Record another transfer") { selectedGross = job }.font(.caption.bold()).tint(.marginInk)
+            } else {
+                HStack { Text("No personal transfer recorded").font(.subheadline).foregroundStyle(.secondary); Spacer(); Button("Record Net") { selectedGross = job }.buttonStyle(.borderedProminent).tint(.marginInk) }
+            }
+        }.marginCard()
     }
 }
 
@@ -273,7 +281,7 @@ struct BudgetLineRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack { Label(category.name, systemImage: category.icon).font(.subheadline.bold()); Spacer(); Button(category.monthlyLimit.money) { editing = true }.buttonStyle(.bordered) }
-            ProgressView(value: min(spent / max(category.monthlyLimit, 1), 1)).tint(spent > category.monthlyLimit ? .marginCoral : .marginMint)
+            ProgressView(value: min(max(spent, 0) / max(category.monthlyLimit, 1), 1)).tint(spent > category.monthlyLimit ? .marginCoral : .marginMint)
             HStack { Text("Spent \(spent.money)"); Spacer(); Text("Remaining \((category.monthlyLimit-spent).money)") }.font(.caption).foregroundStyle(.secondary)
             if category.isFund { Label("Fund balance \(category.fundBalance.money) of \(category.fundTarget.money)", systemImage: "banknote.fill").font(.caption.bold()).foregroundStyle(.green) }
             if let day = category.dueDay { Text("Due on the \(day.ordinal)").font(.caption.bold()).foregroundStyle(.orange) }
@@ -285,6 +293,7 @@ extension Int { var ordinal: String { let formatter = NumberFormatter(); formatt
 
 struct ActivityView: View {
     @Environment(\.modelContext) private var context
+    @AppStorage("margin.bankSkippedTransactionIDs") private var skippedJSON = "[]"
     let transactions: [Transaction]
     @State private var search = ""; @State private var scope = "all"
     var filtered: [Transaction] { transactions.filter { (scope == "all" || $0.ledgerScope == scope) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.category.localizedCaseInsensitiveContains(search)) } }
@@ -292,8 +301,16 @@ struct ActivityView: View {
         List {
             Picker("Ledger", selection: $scope) { Text("All").tag("all"); Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented).listRowBackground(Color.clear)
             ForEach(filtered) { TransactionRow(tx: $0).listRowBackground(Color.clear) }
-                .onDelete { offsets in let shown = filtered; offsets.forEach { context.delete(shown[$0]) }; try? context.save() }
+                .onDelete(perform: delete)
         }.scrollContentBackground(.hidden).background(Color.marginCream).navigationTitle("Activity").searchable(text: $search, prompt: "Search entries")
+    }
+    /// Deleting a bank import also skips it, so the next sync doesn't offer it again.
+    private func delete(at offsets: IndexSet) {
+        let removed = offsets.map { filtered[$0] }
+        var skipped = (try? JSONDecoder().decode([String].self, from: Data(skippedJSON.utf8))) ?? []
+        skipped += removed.compactMap(\.externalID)
+        if let data = try? JSONEncoder().encode(Array(Set(skipped)).sorted()), let value = String(data: data, encoding: .utf8) { skippedJSON = value }
+        removed.forEach(context.delete); try? context.save()
     }
 }
 
@@ -337,12 +354,13 @@ struct GoalsView: View {
 
 struct TransactionRow: View {
     let tx: Transaction
-    private var amountPrefix: String { tx.isIncome ? "+" : "−" }
-    private var detail: String { "\(tx.ledgerScope.capitalized) · \(tx.incomeKind?.capitalized ?? tx.category)" }
+    /// Refunds are stored as negative expenses and shown as money coming back.
+    private var amountPrefix: String { tx.isIncome || tx.amount < 0 ? "+" : "−" }
+    private var detail: String { "\(tx.ledgerScope.capitalized) · \(tx.incomeKind?.capitalized ?? (tx.amount < 0 ? "Refund · \(tx.category)" : tx.category))" }
     var body: some View { HStack(spacing: 13) {
         Image(systemName: tx.isIncome ? "arrow.down.left" : "arrow.up.right").frame(width: 38, height: 38).background(tx.isIncome ? Color.marginLime.opacity(0.55) : Color.black.opacity(0.05), in: Circle())
         VStack(alignment: .leading) { Text(tx.title).font(.subheadline.bold()); Text(detail).font(.caption).foregroundStyle(.secondary) }
-        Spacer(); Text(amountPrefix + tx.amount.moneyExact).font(.subheadline.bold()).foregroundStyle(tx.isIncome ? .green : .primary)
+        Spacer(); Text(amountPrefix + abs(tx.amount).moneyExact).font(.subheadline.bold()).foregroundStyle(tx.isIncome ? .green : .primary)
     }.padding(.vertical, 5) }
 }
 
