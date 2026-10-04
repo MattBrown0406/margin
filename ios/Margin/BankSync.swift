@@ -172,6 +172,9 @@ struct BankAccountsView: View {
                             if tx.amount > 0, ["TRANSFER_OUT", "LOAN_PAYMENTS"].contains(tx.category) {
                                 Label("Looks like a transfer or card payment. Skip it if the purchases are already counted.", systemImage: "arrow.left.arrow.right").font(.caption).foregroundStyle(.secondary)
                             }
+                            if tx.amount < 0, ["TRANSFER_IN", "LOAN_PAYMENTS"].contains(tx.category) {
+                                Label("Looks like a transfer between your own accounts or a card payment. Skip it unless a job paid you.", systemImage: "arrow.left.arrow.right").font(.caption).foregroundStyle(.secondary)
+                            }
                             if tx.amount < 0 {
                                 Picker("Credit type", selection: Binding(get: { reviewIncomeKind(tx) }, set: { reviewIncomeKinds[tx.id] = $0 })) {
                                     Text("Gross → Business").tag("gross"); Text("Net → Personal").tag("net"); Text("Refund").tag("refund")

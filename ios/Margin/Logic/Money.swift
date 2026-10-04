@@ -12,10 +12,13 @@ extension Double {
     /// three digits, so a pasted "12.50" still means 12.50 in comma-decimal locales.
     /// Returns nil for anything that isn't a positive amount of at least one cent.
     init?(moneyInput text: String, locale: Locale = .current) {
-        let edge: (Character) -> Bool = { $0.isWhitespace || "$€£¥₹".contains($0) || ($0.isASCII && $0.isLetter) }
-        var core = Substring(text)
-        while let c = core.first, edge(c) { core.removeFirst() }
-        while let c = core.last, edge(c) { core.removeLast() }
+        // Only currency markers may surround the number; "5k", "50 cents" or "Invoice 1042" are rejected.
+        var core = Substring(text).trimmingCharacters(in: .whitespacesAndNewlines)[...]
+        for marker in ["US$", "USD", "$", "€", "£", "¥", "₹"] {
+            if core.uppercased().hasPrefix(marker) { core = core.dropFirst(marker.count) }
+            if core.uppercased().hasSuffix(marker) { core = core.dropLast(marker.count) }
+        }
+        core = core.trimmingCharacters(in: .whitespacesAndNewlines)[...]
         let isDigit: (Character) -> Bool = { ("0"..."9").contains($0) }
         let isMark: (Character) -> Bool = { $0 == "." || $0 == "," }
         let groupingOnly: Set<Character> = [" ", "'", "\u{00A0}", "\u{202F}"]
@@ -35,7 +38,8 @@ extension Double {
         // Whole part: plain digits, or 1–3 digits then groups of exactly three joined by one kind of separator.
         let groups = integer.split(omittingEmptySubsequences: false) { !isDigit($0) }
         guard let head = groups.first, !head.isEmpty, Set(integer.filter { !isDigit($0) }).count <= 1,
-              groups.count == 1 || (head.count <= 3 && groups.dropFirst().allSatisfy { $0.count == 3 }) else { return nil }
+              // A grouped number can't start with a 0 group: "0,001" or "0.005" is a typo, not a thousand.
+              groups.count == 1 || (head.count <= 3 && head != "0" && groups.dropFirst().allSatisfy { $0.count == 3 }) else { return nil }
 
         guard let value = Double(groups.joined() + (fraction.isEmpty ? "" : "." + fraction)), value.isFinite else { return nil }
         let cents = (value * 100).rounded() / 100

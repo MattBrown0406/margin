@@ -48,21 +48,31 @@ private struct SignedOutResponse: Decodable { let signedOut: Bool }
         }
     }
 
-    /// Ends the session on the service too (best effort), so a copied token stops working.
-    func signOut() async {
-        if let api = MarginAPI.signedIn() { _ = try? await api.request("/v1/session", method: "DELETE", as: SignedOutResponse.self) }
+    /// Signs out of this device only; other devices stay signed in.
+    func signOut() { clearSession() }
+
+    /// Ends every session on the service (best effort), e.g. after losing a device.
+    func signOutEverywhere() async {
+        if let api = MarginAPI.signedIn() {
+            isWorking = true; defer { isWorking = false }
+            _ = try? await api.request("/v1/session", method: "DELETE", as: SignedOutResponse.self)
+        }
         clearSession()
+        message = "Signed out on all your devices."
     }
     private func clearSession() { tokens.delete(); refresh() }
 
     func deleteAccount() async {
-        guard let api = MarginAPI.signedIn() else { clearSession(); return }
+        guard let api = MarginAPI.signedIn() else { clearSession(); message = "Your session ended. Sign in again to delete your account."; return }
         isWorking = true; defer { isWorking = false }
         do {
             _ = try await api.request("/v1/account", method: "DELETE", as: DeletedResponse.self)
             clearSession()
             message = "Your Margin account and bank connections were deleted. Your budget stays on your devices."
-        } catch { message = error.localizedDescription }
+        } catch {
+            refresh()   // a 401 clears the session; show the signed-out state rather than a dead Delete button
+            message = isSignedIn ? error.localizedDescription : "Your session ended. Sign in again to delete your account."
+        }
     }
 
     /// Signs out if the person revoked Margin in Settings › Apple ID › Sign in with Apple.
@@ -86,7 +96,7 @@ struct AccountView: View {
 
     private var iCloudStatus: String {
         if !MarginStore.isUsingCloudKit { return iCloudSync ? "Starts next launch" : "Off" }
-        return FileManager.default.ubiquityIdentityToken == nil ? "Sign in to iCloud in Settings" : "On"
+        return "On when signed in to iCloud"
     }
 
     var body: some View {
@@ -94,7 +104,8 @@ struct AccountView: View {
             Section {
                 if account.isSignedIn {
                     Label("Signed in with Apple", systemImage: "person.crop.circle.badge.checkmark")
-                    Button("Sign out") { Task { await account.signOut() } }.disabled(account.isWorking)
+                    Button("Sign out") { account.signOut() }.disabled(account.isWorking)
+                    Button("Sign out on all devices") { Task { await account.signOutEverywhere() } }.disabled(account.isWorking)
                     Button("Delete account", role: .destructive) { confirmDelete = true }.disabled(account.isWorking)
                 } else if account.serviceConfigured {
                     SignInWithAppleButton(.signIn) { account.prepare($0) } onCompletion: { result in Task { await account.complete(result) } }

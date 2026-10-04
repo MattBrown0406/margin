@@ -21,7 +21,8 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
                       ("1.234,56", "de_DE", 1234.56), ("1.234", "de_DE", 1234), ("12.50", "fr_FR", 12.5), ("1 234,56", "fr_FR", 1234.56)])
     func parses(text: String, locale: String, expected: Double) { #expect(Double(moneyInput: text, locale: Locale(identifier: locale)) == expected) }
 
-    @Test(arguments: ["", "abc", "-5", "0", "0.004", "−3", "Invoice #1042 $750.00", "3 for $10", "1e3", "50¢", "1 2", "1.234,5.6"])
+    @Test(arguments: ["", "abc", "-5", "0", "0.004", "−3", "Invoice #1042 $750.00", "3 for $10", "1e3", "50¢", "1 2", "1.234,5.6",
+                      "5k", "50 cents", "Invoice 1042", "0,001"])
     func rejects(text: String) { #expect(Double(moneyInput: text, locale: Locale(identifier: "en_US")) == nil) }
 
     @Test(arguments: [("USD 40", 40.0), (".50", 0.5), ("1'234.50", 1234.5), ("$ 1,234,567", 1234567), ("€12", 12)])
@@ -112,6 +113,24 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(CashFlowForecast.likelyPayments(for: [dismissed], entries: entries, claimed: [], calendar: calendar).isEmpty)
     }
 
+    @Test func aPreviousJobsPaymentNeverClosesANewBooking() {
+        // A $7,500 job paid Sep 25; on Oct 4 a new $7,500 job is booked for Oct 20.
+        let earlier = gross(7500, day(2026, 9, 25), job: UUID(), title: "Bend")
+        let eugene = BookedJobInfo(id: UUID(), title: "Eugene", expectedDate: day(2026, 10, 20), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 10, 4))
+        #expect(CashFlowForecast.likelyPayments(for: [eugene], entries: [earlier], claimed: [], calendar: calendar).isEmpty)
+    }
+
+    @Test func anUnlinkedNetTransferCanCloseABooking() {
+        // Only the personal account is connected: the $4,500 owner transfer arrives without a recorded Gross.
+        let transfer = net(4500, day(2026, 10, 18), job: UUID())
+        let bend = BookedJobInfo(id: UUID(), title: "Bend", expectedDate: day(2026, 10, 15), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 10, 1))
+        #expect(CashFlowForecast.unpaid([bend], entries: [transfer], claimed: [], calendar: calendar).isEmpty)
+        // A Net already linked to a recorded Gross is that job's transfer, not this booking's.
+        let linkedJob = UUID()
+        let linked = [gross(9000, day(2026, 9, 1), job: linkedJob), net(4500, day(2026, 10, 18), job: linkedJob)]
+        #expect(CashFlowForecast.unpaid([bend], entries: linked, claimed: [], calendar: calendar).count == 1)
+    }
+
     @Test func netRateComesFromJobsWithTransfers() {
         let a = UUID(), b = UUID()
         let entries = [gross(10000, day(2026, 8, 1), job: a), net(6000, day(2026, 8, 3), job: a), net(1000, day(2026, 8, 20), job: a), gross(5000, day(2026, 9, 1), job: b)]
@@ -170,6 +189,13 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         let v = Affordability.evaluate(amount: 100, in: now, now: now, safe: safe, forecast: forecast(received: 0), calendar: calendar)
         #expect(v.level == .tight)
         #expect(v.details.contains { $0.contains("short of funded") })
+    }
+
+    @Test func bookedButUnreceivedNetIsNeverComfortable() {
+        let booked = [BookedJobInfo(id: UUID(), title: "Late Oct", expectedDate: day(2026, 10, 28), expectedGross: 12000, expectedNet: 9000)]
+        let v = Affordability.evaluate(amount: 100, in: now, now: now, safe: safe, forecast: forecast(received: 0, booked: booked), calendar: calendar)
+        #expect(v.level == .tight)
+        #expect(v.details.contains { $0.contains("assumes") })
     }
 
     @Test func notThisMonthNeverPointsBackAtThisMonth() {

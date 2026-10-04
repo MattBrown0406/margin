@@ -57,7 +57,8 @@ struct RootView: View {
         // With iCloud on, a fresh install waits for the person's existing budget to sync down instead of
         // seeding a second copy (which de-duplication would later have to discard). Plan offers the
         // starter budget for someone who really is starting fresh.
-        if MarginStore.isUsingCloudKit, FileManager.default.ubiquityIdentityToken != nil { try? context.save(); return }
+        // (iCloud Drive can be off while CloudKit still syncs, so don't rely on the iCloud Drive token.)
+        if MarginStore.isUsingCloudKit { try? context.save(); return }
         StarterBudget.insert(into: context)
     }
 
@@ -78,6 +79,7 @@ struct RootView: View {
 }
 
 struct TodayView: View {
+    @Environment(\.modelContext) private var context
     let transactions: [Transaction]; let categories: [BudgetCategory]; let goals: [SavingsGoal]; let bookedJobs: [BookedJob]
     @State private var showAfford = false
     private var personalExpenses: [Transaction] { transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
@@ -140,7 +142,12 @@ struct TodayView: View {
                     }.marginCard()
                 }.buttonStyle(.plain)
                 HStack { Text("Recent activity").font(.title3.bold()); Spacer(); NavigationLink("See all") { ActivityView(transactions: transactions) }.font(.subheadline.bold()) }
-                if categories.isEmpty { Text("Your budget isn’t set up yet. It arrives from iCloud if you use Margin elsewhere, or start one in Plan.").font(.subheadline).foregroundStyle(.secondary) }
+                if categories.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Your budget isn’t set up yet. If you use Margin on another device, it arrives once iCloud syncs.").font(.subheadline).foregroundStyle(.secondary)
+                        Button("Start with the starter budget") { StarterBudget.insert(into: context) }.buttonStyle(.borderedProminent).tint(.marginInk)
+                    }.marginCard()
+                }
                 else if transactions.isEmpty { Text("Nothing recorded yet. Tap Add when you spend or when a job pays.").font(.subheadline).foregroundStyle(.secondary) }
                 ForEach(transactions.prefix(4)) { TransactionRow(tx: $0) }
                 if let goal = goals.first {

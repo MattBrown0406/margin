@@ -7,8 +7,10 @@ struct BookedJobInfo: Equatable, Identifiable {
     var expectedDate: Date
     var expectedGross: Double
     var expectedNet: Double
-    /// Recorded payments (Gross jobIDs) the person said are not this booking.
+    /// Recorded payments (jobIDs) the person said are not this booking.
     var ignoredPaymentIDs: Set<UUID> = []
+    /// When the booking was made; payments recorded well before that can't be its payment.
+    var bookedAt: Date = .distantPast
 }
 
 /// One month of the cash-flow calendar: personal Net already received plus Net expected from booked
@@ -57,22 +59,31 @@ enum CashFlowForecast {
     /// the plan. The shortfall is `-cumulative`.
     static func firstShortfall(_ months: [ForecastMonth]) -> ForecastMonth? { months.first(where: \.isRunningShort) }
 
-    /// For each open booking, a recorded Gross that is probably its payment (same title, or amount within 5%,
-    /// dated from 30 days before to 45 days after the expected date). Each payment matches at most one booking,
-    /// and payments already linked to a paid booking (`claimed`) or dismissed for this booking never match.
+    /// For each open booking, a recorded payment that is probably it: a Gross with the same title or within 5% of
+    /// the expected Gross, or (when the business account isn't tracked) a Net transfer not linked to any recorded
+    /// Gross, matched against the expected Net. It must be dated from 30 days before to 45 days after the expected
+    /// date and no earlier than 3 days before the booking was made, so a previous job's payment never closes a
+    /// new booking. Each payment matches at most one booking; payments linked to a paid booking (`claimed`) or
+    /// dismissed for this booking never match.
     static func likelyPayments(for booked: [BookedJobInfo], entries: [LedgerEntry], claimed: Set<UUID>, calendar: Calendar = .current) -> [UUID: LedgerEntry] {
         var taken = claimed, matches: [UUID: LedgerEntry] = [:]
         let normalize: (String) -> String = { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let grossJobIDs = Set(entries.filter(\.isGross).compactMap(\.jobID))
+        let close: (Double, Double) -> Bool = { actual, expected in expected > 0 && abs(actual - expected) <= expected * 0.05 }
         for job in booked.sorted(by: { $0.expectedDate < $1.expectedDate }) {
-            guard let from = calendar.date(byAdding: .day, value: -30, to: job.expectedDate),
+            guard let windowStart = calendar.date(byAdding: .day, value: -30, to: job.expectedDate),
                   let to = calendar.date(byAdding: .day, value: 45, to: job.expectedDate) else { continue }
+            let from = max(windowStart, calendar.date(byAdding: .day, value: -3, to: job.bookedAt) ?? .distantPast)
             let candidates = entries.filter { entry in
-                guard entry.isGross, let id = entry.jobID, !taken.contains(id), !job.ignoredPaymentIDs.contains(id), entry.date >= from, entry.date <= to else { return false }
+                guard let id = entry.jobID, !taken.contains(id), !job.ignoredPaymentIDs.contains(id), entry.date >= from, entry.date <= to else { return false }
                 let sameTitle = !job.title.isEmpty && normalize(entry.title) == normalize(job.title)
-                let closeAmount = job.expectedGross > 0 && abs(entry.amount - job.expectedGross) <= job.expectedGross * 0.05
-                return sameTitle || closeAmount
+                if entry.isGross { return sameTitle || close(entry.amount, job.expectedGross) }
+                if entry.isNet && !grossJobIDs.contains(id) { return sameTitle || close(entry.amount, job.expectedNet) }
+                return false
             }
-            if let best = candidates.min(by: { abs($0.date.timeIntervalSince(job.expectedDate)) < abs($1.date.timeIntervalSince(job.expectedDate)) }), let id = best.jobID {
+            // Prefer a Gross receipt, then the closest date.
+            if let best = candidates.min(by: { ($0.isGross ? 0 : 1, abs($0.date.timeIntervalSince(job.expectedDate))) < ($1.isGross ? 0 : 1, abs($1.date.timeIntervalSince(job.expectedDate))) }),
+               let id = best.jobID {
                 matches[job.id] = best; taken.insert(id)
             }
         }

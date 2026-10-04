@@ -76,7 +76,7 @@ struct AffordView: View {
             } header: { Text("Ask Margin") } footer: { Text("Sends a summary of your budget totals, never your transactions, to Margin’s assistant.") }
         }
     }.navigationTitle("Can I afford it?")
-     .onChange(of: amount) { answer = nil; askError = nil }.onChange(of: monthOffset) { answer = nil; askError = nil }
+     .onChange(of: amount) { answer = nil; askError = nil }.onChange(of: monthOffset) { answer = nil; askError = nil }.onChange(of: what) { answer = nil; askError = nil }
      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } } } }
 
     private func icon(_ level: AffordabilityVerdict.Level) -> String { switch level { case .comfortable: "checkmark.circle.fill"; case .tight: "exclamationmark.circle.fill"; case .notYet: "clock.fill" } }
@@ -85,7 +85,7 @@ struct AffordView: View {
     private func ask(_ verdict: AffordabilityVerdict) async {
         guard let api = MarginAPI.signedIn(), let value = Double(moneyInput: amount) else { return }
         asking = true; askError = nil; defer { asking = false }
-        let askedAmount = amount, askedMonth = monthOffset
+        let askedAmount = amount, askedMonth = monthOffset, askedWhat = what
         let description = String(what.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
         let monthLabel = monthOffset == 0 ? "this month" : targetMonth.formatted(.dateTime.month(.wide).year())
         let question = "Can I afford \(description.isEmpty ? "this" : description) for \(value.moneyExact) \(monthOffset == 0 ? "this month" : "in \(monthLabel)")?"
@@ -95,9 +95,9 @@ struct AffordView: View {
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
             let reply = try await api.request("/v1/ask", method: "POST", body: ["question": question, "context": json], as: AskResponse.self).answer
             // Ignore a reply for a purchase the person has since changed.
-            guard amount == askedAmount, monthOffset == askedMonth else { return }
+            guard amount == askedAmount, monthOffset == askedMonth, what == askedWhat else { return }
             answer = reply
-        } catch { if amount == askedAmount, monthOffset == askedMonth { askError = error.localizedDescription } }
+        } catch { if amount == askedAmount, monthOffset == askedMonth, what == askedWhat { askError = error.localizedDescription } }
     }
 
     private func context(verdict: AffordabilityVerdict, description: String, amount: Double) -> AskContext {

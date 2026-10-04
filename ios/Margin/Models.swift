@@ -122,7 +122,7 @@ import SwiftData
     }
 
     var isOpen: Bool { status == "booked" }
-    var info: BookedJobInfo { BookedJobInfo(id: id, title: title, expectedDate: expectedDate, expectedGross: expectedGross, expectedNet: expectedNet, ignoredPaymentIDs: Set(ignoredPaymentIDs)) }
+    var info: BookedJobInfo { BookedJobInfo(id: id, title: title, expectedDate: expectedDate, expectedGross: expectedGross, expectedNet: expectedNet, ignoredPaymentIDs: Set(ignoredPaymentIDs), bookedAt: createdAt) }
 
     /// Open bookings that should still count as expected income: payments already recorded some other way
     /// (Add, a bank import) are matched and excluded so they aren't counted twice.

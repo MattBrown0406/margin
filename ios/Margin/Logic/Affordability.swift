@@ -24,10 +24,14 @@ enum Affordability {
         let fitsLater = forecast.first { $0.monthStart > currentStart && $0.monthStart >= calendar.startOfMonth(for: month) && $0.cumulative >= amount }?.monthStart
 
         if monthsAway <= 0 {
-            // Only personal Net funds the plan. If this month's plan isn't covered yet, flexible money on paper
-            // isn't money in hand, so never call it comfortable.
-            let unfunded = max(0, -(target?.gap ?? 0))
-            let unfundedNote = unfunded > 0 ? ["Your plan is still \(unfunded.money) short of funded this month, so this assumes that Net arrives."] : []
+            // Only personal Net funds the plan. Until Net already received covers this month's plan, flexible
+            // money on paper isn't money in hand, so never call it comfortable.
+            let notYetReceived = max(0, (target?.planned ?? 0) - (target?.receivedNet ?? 0))
+            let unfunded = notYetReceived
+            let stillShort = max(0, -(target?.gap ?? 0))
+            let unfundedNote: [String] = notYetReceived == 0 ? [] : stillShort > 0
+                ? ["Your plan is still \(stillShort.money) short of funded this month, even counting booked work."]
+                : ["This assumes \(notYetReceived.money) of booked Net arrives this month as expected."]
             if amount <= safe.flexibleLeft {
                 let left = safe.flexibleLeft - amount, daily = left / Double(max(1, safe.daysLeft))
                 let comfortable = amount <= safe.flexibleLeft * 0.5 && unfunded == 0
