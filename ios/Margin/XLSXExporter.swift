@@ -72,12 +72,30 @@ enum XLSXExporter {
             [.text("Note"), .text("Gross is money received from interventions. Net is money actually transferred from the business account to the personal account.")]
         ]
 
+        let entries = transactions.map(\.ledgerEntry), year = calendar.component(.year, from: .now)
+        var jobRows: [[WorkbookCell]] = [[.text("Date received"), .text("Job"), .text("Gross"), .text("Job expenses"), .text("Profit"), .text("Margin"), .text("Net transferred")]]
+        if let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)), let end = calendar.date(byAdding: DateComponents(year: 1, second: -1), to: start) {
+            for job in JobProfit.summaries(entries: entries, in: start...end).reversed() {
+                jobRows.append([.text(date(job.date)), .text(job.title), .number(job.gross), .number(job.expenses), .number(job.profit),
+                                job.margin.map { .text("\(Int(($0 * 100).rounded()))%") } ?? .text(""), .number(job.transferred)])
+            }
+        }
+        let scheduleC = ScheduleC.report(entries: entries, year: year, calendar: calendar)
+        var scheduleRows: [[WorkbookCell]] = [[.text("Line"), .text("Schedule C item (\(year), year to date)"), .text("Amount"), .text("Note")],
+                                              [.text("1"), .text("Gross receipts"), .number(scheduleC.grossReceipts), .text("")]]
+        scheduleRows += scheduleC.lines.map { [.text($0.line), .text($0.label), .number($0.amount), .text($0.note ?? "")] }
+        scheduleRows += [[.text("28"), .text("Total expenses"), .number(scheduleC.totalExpenses), .text("")],
+                         [.text("31"), .text("Net profit"), .number(scheduleC.netProfit), .text("")],
+                         [.text(""), .text("Prepared from Margin’s business ledger. A starting point for your tax preparer, not tax advice."), .text(""), .text("")]]
+
         let sheets = [
             WorkbookSheet(name: "Summary", rows: summaryRows),
             WorkbookSheet(name: "Income & Jobs", rows: incomeRows),
             WorkbookSheet(name: "Expenses", rows: expenseRows),
             WorkbookSheet(name: "Budget", rows: budgetRows),
-            WorkbookSheet(name: "Category Totals", rows: categoryRows)
+            WorkbookSheet(name: "Category Totals", rows: categoryRows),
+            WorkbookSheet(name: "Job Profit", rows: jobRows),
+            WorkbookSheet(name: "Schedule C", rows: scheduleRows)
         ]
         return package(sheets)
     }

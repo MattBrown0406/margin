@@ -15,7 +15,33 @@
 		B883032A07BBC1768A6C3E35 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F888D1093C919C1FC13C6DF9 /* Theme.swift */; };
 		D9E30CCFAA0852B2CD7EC50C /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2B95BAF3921862FD64B0EB82 /* LinkKit */; };
 		E3389B5F53E9970B92061AA5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F4E206316B95F6B7C1768586 /* Assets.xcassets */; };
+		90BCEA03CD3DB3383A223DBB /* MarginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149BC7B02E3C9E25122B9EE1 /* MarginService.swift */; };
+		4A26755F1979AAC34B463BD1 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD9E1A7781DDD5E19C959A76 /* AccountView.swift */; };
+		0BB6019E8781C72F88AA82BD /* ForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D9D1958E47048A6CF0288EE /* ForecastView.swift */; };
+		37D5CF7B5EA93FD6D4935098 /* AffordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C121ED7522642FF3F703F24B /* AffordView.swift */; };
+		FDACCC537689EC95B6C0E8C6 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 320E8439B00086C397A59960 /* Intents.swift */; };
+		4DBE6D55A4A24C133B9BB41A /* Ledger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEF505194953205EA41D9B /* Ledger.swift */; };
+		D2FBC3CC410639B1A70E85B8 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42AF58B43882B1F9BDC15E26 /* Money.swift */; };
+		C55E2B676A9899C7AE52A88C /* SafeToSpend.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */; };
+		838C47ABB6DDC310D6D97B88 /* Forecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5212DD21910B6B29901142D /* Forecast.swift */; };
+		0F5A9E27E12B96E2DA4EF7E6 /* JobProfit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BDCBEE92CB05AF26CB4045 /* JobProfit.swift */; };
+		FDDCAE7CB401FFC7A822B14D /* Affordability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F352E0341128E92F817089 /* Affordability.swift */; };
+		ACD055DC270F6CBB47A4AED8 /* Ledger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEF505194953205EA41D9B /* Ledger.swift */; };
+		A4C535F481C1F8B2E68C7C78 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42AF58B43882B1F9BDC15E26 /* Money.swift */; };
+		44A124E7D95CB6B62A822E7C /* SafeToSpend.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */; };
+		A19551B000DED49BD8D51B6D /* MarginWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 826BBA54A564157A39A09436 /* MarginWidget.swift */; };
+		F47B24CDBECDC3924CD55B3E /* MarginWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C239DBD297B956F8913F844A /* MarginWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F80248F3C5A16784619D70AB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FEAE8FB7E0F3E87FDEA460D4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 32409EA5C776E23BAEA240DA;
+			remoteInfo = MarginWidget;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		0CD10A258FB74B29882AAD76 /* BankSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BankSync.swift; sourceTree = "<group>"; };
@@ -26,7 +52,38 @@
 		E21414B5D6DD211201EA076C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		F4E206316B95F6B7C1768586 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F888D1093C919C1FC13C6DF9 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		149BC7B02E3C9E25122B9EE1 /* MarginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarginService.swift; sourceTree = "<group>"; };
+		BD9E1A7781DDD5E19C959A76 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
+		9D9D1958E47048A6CF0288EE /* ForecastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForecastView.swift; sourceTree = "<group>"; };
+		C121ED7522642FF3F703F24B /* AffordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AffordView.swift; sourceTree = "<group>"; };
+		320E8439B00086C397A59960 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
+		45EEF505194953205EA41D9B /* Ledger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ledger.swift; sourceTree = "<group>"; };
+		42AF58B43882B1F9BDC15E26 /* Money.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Money.swift; sourceTree = "<group>"; };
+		AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeToSpend.swift; sourceTree = "<group>"; };
+		A5212DD21910B6B29901142D /* Forecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Forecast.swift; sourceTree = "<group>"; };
+		E5BDCBEE92CB05AF26CB4045 /* JobProfit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobProfit.swift; sourceTree = "<group>"; };
+		74F352E0341128E92F817089 /* Affordability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Affordability.swift; sourceTree = "<group>"; };
+		C06AECF66CD80B41B9EFE626 /* Margin.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Margin.entitlements; sourceTree = "<group>"; };
+		2DFC1934796351CACE6E9D88 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		826BBA54A564157A39A09436 /* MarginWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarginWidget.swift; sourceTree = "<group>"; };
+		D428969F2CE222BFCB49F38A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9DB4769C7E715B7FC11C0ECC /* MarginWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MarginWidget.entitlements; sourceTree = "<group>"; };
+		C239DBD297B956F8913F844A /* MarginWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MarginWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C98F44562FBDBB445DA5270C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F47B24CDBECDC3924CD55B3E /* MarginWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A5FE32646F84CFD7A34DE996 /* Frameworks */ = {
@@ -37,6 +94,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		439B5148AA82D8DD76D28776 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -44,6 +108,7 @@
 			isa = PBXGroup;
 			children = (
 				7B379F86102E628A97BC9296 /* Margin */,
+				4C4CDFBA834B925E9A7AB939 /* MarginWidget */,
 				8E0AF008E4DCE97B7CC999AD /* Products */,
 			);
 			sourceTree = "<group>";
@@ -52,6 +117,14 @@
 			isa = PBXGroup;
 			children = (
 				F4E206316B95F6B7C1768586 /* Assets.xcassets */,
+				2DFC1934796351CACE6E9D88 /* Info.plist */,
+				C06AECF66CD80B41B9EFE626 /* Margin.entitlements */,
+				B540CCFB01AEEFE06E72BA87 /* Logic */,
+				BD9E1A7781DDD5E19C959A76 /* AccountView.swift */,
+				C121ED7522642FF3F703F24B /* AffordView.swift */,
+				9D9D1958E47048A6CF0288EE /* ForecastView.swift */,
+				320E8439B00086C397A59960 /* Intents.swift */,
+				149BC7B02E3C9E25122B9EE1 /* MarginService.swift */,
 				0CD10A258FB74B29882AAD76 /* BankSync.swift */,
 				C7942530B524307192EED9B2 /* MarginApp.swift */,
 				E21414B5D6DD211201EA076C /* Models.swift */,
@@ -67,8 +140,33 @@
 			isa = PBXGroup;
 			children = (
 				15D651C6A1ADBDD45BC9F85C /* Margin.app */,
+				C239DBD297B956F8913F844A /* MarginWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B540CCFB01AEEFE06E72BA87 /* Logic */ = {
+			isa = PBXGroup;
+			children = (
+				45EEF505194953205EA41D9B /* Ledger.swift */,
+				42AF58B43882B1F9BDC15E26 /* Money.swift */,
+				AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */,
+				A5212DD21910B6B29901142D /* Forecast.swift */,
+				E5BDCBEE92CB05AF26CB4045 /* JobProfit.swift */,
+				74F352E0341128E92F817089 /* Affordability.swift */,
+			);
+			path = Logic;
+			sourceTree = "<group>";
+		};
+		4C4CDFBA834B925E9A7AB939 /* MarginWidget */ = {
+			isa = PBXGroup;
+			children = (
+				D428969F2CE222BFCB49F38A /* Info.plist */,
+				9DB4769C7E715B7FC11C0ECC /* MarginWidget.entitlements */,
+				826BBA54A564157A39A09436 /* MarginWidget.swift */,
+			);
+			name = MarginWidget;
+			path = ios/MarginWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -81,10 +179,12 @@
 				0233FA2483595F6EE0386ED0 /* Sources */,
 				AD46D1D61227AB9B7AD819B4 /* Resources */,
 				A5FE32646F84CFD7A34DE996 /* Frameworks */,
+				C98F44562FBDBB445DA5270C /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D8D36CFFF058521E9832DCBF /* PBXTargetDependency */,
 			);
 			name = Margin;
 			packageProductDependencies = (
@@ -93,6 +193,23 @@
 			productName = Margin;
 			productReference = 15D651C6A1ADBDD45BC9F85C /* Margin.app */;
 			productType = "com.apple.product-type.application";
+		};
+		32409EA5C776E23BAEA240DA /* MarginWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79B9BC5B8EA909A497D3778C /* Build configuration list for PBXNativeTarget "MarginWidget" */;
+			buildPhases = (
+				155C5DF95879D6C25D88F838 /* Sources */,
+				780914D86ABD7A08B3524B61 /* Resources */,
+				439B5148AA82D8DD76D28776 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MarginWidget;
+			productName = MarginWidget;
+			productReference = C239DBD297B956F8913F844A /* MarginWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -123,6 +240,7 @@
 			projectRoot = "";
 			targets = (
 				C5C2C05B492FB78A3D70F172 /* Margin */,
+				32409EA5C776E23BAEA240DA /* MarginWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -133,6 +251,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				E3389B5F53E9970B92061AA5 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		780914D86ABD7A08B3524B61 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -149,10 +274,40 @@
 				35DC386ABCBF85D8A68260A3 /* RootView.swift in Sources */,
 				B883032A07BBC1768A6C3E35 /* Theme.swift in Sources */,
 				8D25E988108A98A9654F486C /* XLSXExporter.swift in Sources */,
+				90BCEA03CD3DB3383A223DBB /* MarginService.swift in Sources */,
+				4A26755F1979AAC34B463BD1 /* AccountView.swift in Sources */,
+				0BB6019E8781C72F88AA82BD /* ForecastView.swift in Sources */,
+				37D5CF7B5EA93FD6D4935098 /* AffordView.swift in Sources */,
+				FDACCC537689EC95B6C0E8C6 /* Intents.swift in Sources */,
+				4DBE6D55A4A24C133B9BB41A /* Ledger.swift in Sources */,
+				D2FBC3CC410639B1A70E85B8 /* Money.swift in Sources */,
+				C55E2B676A9899C7AE52A88C /* SafeToSpend.swift in Sources */,
+				838C47ABB6DDC310D6D97B88 /* Forecast.swift in Sources */,
+				0F5A9E27E12B96E2DA4EF7E6 /* JobProfit.swift in Sources */,
+				FDDCAE7CB401FFC7A822B14D /* Affordability.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		155C5DF95879D6C25D88F838 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ACD055DC270F6CBB47A4AED8 /* Ledger.swift in Sources */,
+				A4C535F481C1F8B2E68C7C78 /* Money.swift in Sources */,
+				44A124E7D95CB6B62A822E7C /* SafeToSpend.swift in Sources */,
+				A19551B000DED49BD8D51B6D /* MarginWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D8D36CFFF058521E9832DCBF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 32409EA5C776E23BAEA240DA /* MarginWidget */;
+			targetProxy = F80248F3C5A16784619D70AB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		022EB0CD6378AB3D933EBF0A /* Debug */ = {
@@ -284,6 +439,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ios/Margin/Margin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
@@ -305,6 +461,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ios/Margin/Margin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
@@ -321,6 +478,48 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		58C151140BBE36270A88F00D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ios/MarginWidget/MarginWidget.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Margin;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mattbrown.margin.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D3B1B66EAC12CC27C7B98038 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ios/MarginWidget/MarginWidget.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Margin;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mattbrown.margin.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -339,6 +538,15 @@
 			buildConfigurations = (
 				972705B5C72B02CD8421B4BF /* Debug */,
 				5A2B7CB1FA7FB678A7971FD2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		79B9BC5B8EA909A497D3778C /* Build configuration list for PBXNativeTarget "MarginWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				58C151140BBE36270A88F00D /* Debug */,
+				D3B1B66EAC12CC27C7B98038 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

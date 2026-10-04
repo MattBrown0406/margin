@@ -21,6 +21,7 @@ targets:
       - path: ios/Margin
     dependencies:
       - package: LinkKit
+      - target: MarginWidget
     settings:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: Margin
@@ -32,6 +33,26 @@ targets:
         # Read by the app via Info.plist; replace with the HTTPS bank-service URL.
         MARGIN_API_BASE_URL: "https://api.example.com"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # iCloud (CloudKit), Sign in with Apple, and the App Group shared with the widget.
+        CODE_SIGN_ENTITLEMENTS: ios/Margin/Margin.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
     scheme:
       testTargets: []
+  MarginWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ios/MarginWidget
+      # The widget recomputes safe-to-spend itself so it can roll over at midnight.
+      - path: ios/Margin/Logic/Ledger.swift
+      - path: ios/Margin/Logic/Money.swift
+      - path: ios/Margin/Logic/SafeToSpend.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mattbrown.margin.widget
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ios/MarginWidget/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Margin
+        CODE_SIGN_ENTITLEMENTS: ios/MarginWidget/MarginWidget.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES

@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import Security
 #if canImport(LinkKit)
 import LinkKit
 #endif
@@ -39,49 +38,6 @@ private struct LinkTokenResponse: Codable { let linkToken: String; let expiratio
 private struct ExchangeResponse: Codable { let itemId: String; let institutionName: String; let accounts: [BankAccountDTO] }
 private struct SyncResponse: Codable { let added: Int; let modified: Int; let removed: Int; let transactions: [ImportedBankTransaction] }
 
-struct BankAPIError: LocalizedError {
-    let message: String
-    var errorDescription: String? { message }
-}
-
-final class SessionTokenStore {
-    private let service = "com.mattbrown.margin.api"
-    func read() -> String? {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "session", kSecReturnData as String: true]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-    func save(_ token: String) {
-        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "session"]
-        SecItemDelete(base as CFDictionary)
-        var value = base; value[kSecValueData as String] = Data(token.utf8); value[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(value as CFDictionary, nil)
-    }
-}
-
-struct BankAPI {
-    let baseURL: URL
-    let sessionToken: String
-    private let decoder = JSONDecoder()
-
-    func request<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, as: T.Type) async throws -> T {
-        // Appending (not resolving) keeps a path prefix on the base URL, e.g. https://host/margin/v1/...
-        var request = URLRequest(url: baseURL.appending(path: path)); request.httpMethod = method
-        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 20
-        if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw BankAPIError(message: "No response from bank service") }
-        guard (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw BankAPIError(message: message ?? "Bank service returned \(http.statusCode)")
-        }
-        return try decoder.decode(T.self, from: data)
-    }
-}
-
 @MainActor final class BankSyncViewModel: ObservableObject {
     @Published var connections: [BankConnectionDTO] = []
     @Published var reviewTransactions: [ImportedBankTransaction] = []
@@ -89,23 +45,19 @@ struct BankAPI {
     @Published var errorMessage: String?
     @Published var linkToken: String?
 
-    private let tokenStore = SessionTokenStore()
-    private var api: BankAPI? {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "MARGIN_API_BASE_URL") as? String,
-              value != "https://api.example.com", let url = URL(string: value), let token = tokenStore.read() else { return nil }
-        return BankAPI(baseURL: url, sessionToken: token)
-    }
+    private var api: MarginAPI? { MarginAPI.signedIn() }
     var isConfigured: Bool { api != nil }
 
     /// Set while Plaid Link runs in update mode to repair an existing connection's login.
     private var repairingItemID: String?
 
     func load() async {
+        objectWillChange.send()   // sign-in state may have changed while this screen was hidden
         guard let api else { return }
         await work { self.connections = try await api.request("/v1/plaid/accounts", as: ConnectionsResponse.self).connections }
     }
     func beginLink(repairing connection: BankConnectionDTO? = nil) async {
-        guard let api else { errorMessage = "Secure bank service setup is required before connecting a real account."; return }
+        guard let api else { errorMessage = "Sign in with Apple in Settings before connecting a bank."; return }
         repairingItemID = connection?.itemId
         let body: [String: Any] = connection.map { ["itemId": $0.itemId] } ?? [:]
         await work { self.linkToken = try await api.request("/v1/plaid/link-token", method: "POST", body: body, as: LinkTokenResponse.self).linkToken }
@@ -173,11 +125,18 @@ struct BankAccountsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Bank accounts").font(.largeTitle.bold())
                 Text("Read-only connections. Margin never receives your bank password and cannot move money.").foregroundStyle(.secondary)
-                if !model.isConfigured {
+                if MarginService.baseURL == nil {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Secure service setup needed", systemImage: "lock.shield.fill").font(.headline)
-                        Text("The app is ready for Plaid, but its HTTPS API URL and signed user session must be configured before a real Bank of America login can open.").font(.subheadline).foregroundStyle(.secondary)
+                        Text("The app is ready for Plaid, but the MARGIN_API_BASE_URL build setting must point at your HTTPS service before a real bank login can open.").font(.subheadline).foregroundStyle(.secondary)
                     }.marginCard()
+                } else if !model.isConfigured {
+                    NavigationLink { AccountView() } label: {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Sign in to connect a bank", systemImage: "person.crop.circle.badge.plus").font(.headline)
+                            Text("Sign in with Apple in Settings. Your budget stays on your devices; only bank connections use Margin’s service.").font(.subheadline).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading).marginCard()
+                    }.buttonStyle(.plain)
                 }
                 ForEach(model.connections) { connection in
                     VStack(alignment: .leading, spacing: 12) {
@@ -230,6 +189,12 @@ struct BankAccountsView: View {
                                 }.pickerStyle(.segmented)
                                 Picker("Category", selection: Binding(get: { reviewCategory(tx) }, set: { reviewCategories[tx.id] = $0 })) {
                                     ForEach(categoryOptions(for: reviewScope(tx)), id: \.self) { Text($0).tag($0) }
+                                }
+                                if reviewScope(tx) == "business", !linkableJobs.isEmpty {
+                                    Picker("For job", selection: Binding(get: { reviewJobs[tx.id] }, set: { reviewJobs[tx.id] = $0 })) {
+                                        Text("Not tied to a job").tag(UUID?.none)
+                                        ForEach(linkableJobs) { job in Text("\(job.title) · \(job.date.formatted(date: .abbreviated, time: .omitted))").tag(job.jobID) }
+                                    }
                                 }
                             }
                             HStack {
@@ -298,7 +263,9 @@ struct BankAccountsView: View {
             tx = Transaction(title: imported.name, amount: abs(imported.amount), date: date, category: kind == "gross" ? "Intervention income" : "Owner transfer", isIncome: true, ledgerScope: kind == "gross" ? "business" : "personal", incomeKind: kind, jobID: jobID)
         } else {
             // A refund is stored as a negative expense so it reduces spending in its category.
-            tx = Transaction(title: imported.name, amount: creditKind == "refund" ? -abs(imported.amount) : imported.amount, date: date, category: reviewCategory(imported), ledgerScope: reviewScope(imported))
+            let scope = reviewScope(imported)
+            tx = Transaction(title: imported.name, amount: creditKind == "refund" ? -abs(imported.amount) : imported.amount, date: date, category: reviewCategory(imported), ledgerScope: scope,
+                             jobID: scope == "business" ? reviewJobs[imported.id] : nil)
         }
         tx.externalID = imported.id; tx.externalAccountID = imported.accountId; tx.isPending = false
         context.insert(tx); try? context.save()

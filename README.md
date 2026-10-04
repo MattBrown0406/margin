@@ -21,6 +21,11 @@ Margin answers one useful daily question: **What can I safely spend today and st
 - Optional read-only Plaid account linking for Bank of America and other supported institutions
 - Connected balances, pending/posted handling, a review-before-import inbox, deduplication, and disconnect controls
 - Manual/local budgeting remains fully usable without a bank connection
+- iCloud backup and sync across iPhone and iPad (SwiftData + CloudKit), with Sign in with Apple for the bank service
+- Booked-job pipeline and a six-month cash-flow forecast ("December is $2,100 short unless more work books")
+- Profit per job: tag business expenses to the job they served; per-job margin, and a year-to-date Schedule C summary in Reports and the Excel export
+- Home-screen and lock-screen Safe to Spend widget, plus Siri/Shortcuts: "Log an expense in Margin", "What can I spend today in Margin"
+- "Can I afford it?": an on-device verdict for this month or a future month, with an optional plain-English plan from Ask Margin (Claude) that only ever sees budget totals
 
 ## Interactive HTML prototype
 Open `web/index.html` directly, or run:
@@ -55,6 +60,28 @@ open Margin.xcodeproj
 ```
 
 The native target resolves Plaid's official `LinkKit` Swift package. Real bank linking also requires the authenticated service in `backend/`.
+
+## Apple Developer setup (required to build to a device)
+
+The app now uses capabilities that need a paid Apple Developer team. In Xcode, select your team for **both** the `Margin` and `MarginWidget` targets, then make sure these identifiers exist (Xcode's Signing & Capabilities tab can create them):
+
+| Capability | Identifier | Used for |
+|---|---|---|
+| iCloud › CloudKit | `iCloud.com.mattbrown.margin` | Backup and sync |
+| App Groups (app and widget) | `group.com.mattbrown.margin` | Sharing today's numbers with the widget |
+| Sign in with Apple | — | Signing in to the bank service and Ask Margin |
+| Background Modes › Remote notifications | — | CloudKit sync pushes |
+
+If you change the bundle prefix, update `ios/Margin/Margin.entitlements`, `ios/MarginWidget/MarginWidget.entitlements`, and `WidgetSnapshot.appGroup`. Without iCloud the app quietly keeps data on the device; sync can also be turned off in Settings.
+
+New installs start with the starter budget only (no sample transactions), because with iCloud sync sample entries would reach every device.
+
+## Tests
+
+```bash
+swift test            # money logic: safe-to-spend, forecast, job profit, Schedule C, affordability
+cd backend && npm test
+```
 
 ## Secure bank service
 

@@ -4,6 +4,11 @@
 <dict>
 	<!-- Custom keys must live here: Xcode's generated Info.plist silently drops unknown INFOPLIST_KEY_* settings.
 	     Set the MARGIN_API_BASE_URL build setting to the HTTPS bank-service deployment. -->
+	<!-- Lets CloudKit deliver silent pushes so changes from other devices sync in the background. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>MARGIN_API_BASE_URL</key>
 	<string>$(MARGIN_API_BASE_URL)</string>
 </dict>
