@@ -66,27 +66,30 @@ enum CashFlowForecast {
     /// new booking. Each payment matches at most one booking; payments linked to a paid booking (`claimed`) or
     /// dismissed for this booking never match.
     static func likelyPayments(for booked: [BookedJobInfo], entries: [LedgerEntry], claimed: Set<UUID>, calendar: Calendar = .current) -> [UUID: LedgerEntry] {
-        var taken = claimed, matches: [UUID: LedgerEntry] = [:]
         let normalize: (String) -> String = { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
         let grossJobIDs = Set(entries.filter(\.isGross).compactMap(\.jobID))
         let close: (Double, Double) -> Bool = { actual, expected in expected > 0 && abs(actual - expected) <= expected * 0.05 }
-        for job in booked.sorted(by: { $0.expectedDate < $1.expectedDate }) {
+        // Every plausible (booking, payment) pair…
+        var pairs: [(job: BookedJobInfo, entry: LedgerEntry, rank: (Int, TimeInterval))] = []
+        for job in booked {
             guard let windowStart = calendar.date(byAdding: .day, value: -30, to: job.expectedDate),
                   // A booking keeps counting for `overdueGraceDays`, so a payment that late must still match it.
                   let to = calendar.date(byAdding: .day, value: max(45, overdueGraceDays), to: job.expectedDate) else { continue }
             let from = max(windowStart, calendar.date(byAdding: .day, value: -3, to: job.bookedAt) ?? .distantPast)
-            let candidates = entries.filter { entry in
-                guard let id = entry.jobID, !taken.contains(id), !job.ignoredPaymentIDs.contains(id), entry.date >= from, entry.date <= to else { return false }
+            for entry in entries {
+                guard let id = entry.jobID, !claimed.contains(id), !job.ignoredPaymentIDs.contains(id), entry.date >= from, entry.date <= to else { continue }
                 let sameTitle = !job.title.isEmpty && normalize(entry.title) == normalize(job.title)
-                if entry.isGross { return sameTitle || close(entry.amount, job.expectedGross) }
-                if entry.isNet && !grossJobIDs.contains(id) { return sameTitle || close(entry.amount, job.expectedNet) }
-                return false
+                let plausible = entry.isGross ? (sameTitle || close(entry.amount, job.expectedGross))
+                    : entry.isNet && !grossJobIDs.contains(id) && (sameTitle || close(entry.amount, job.expectedNet))
+                // Prefer a Gross receipt, then the payment closest to the booking's expected date.
+                if plausible { pairs.append((job, entry, (entry.isGross ? 0 : 1, abs(entry.date.timeIntervalSince(job.expectedDate))))) }
             }
-            // Prefer a Gross receipt, then the closest date.
-            if let best = candidates.min(by: { ($0.isGross ? 0 : 1, abs($0.date.timeIntervalSince(job.expectedDate))) < ($1.isGross ? 0 : 1, abs($1.date.timeIntervalSince(job.expectedDate))) }),
-               let id = best.jobID {
-                matches[job.id] = best; taken.insert(id)
-            }
+        }
+        // …assigned closest-first across all bookings, so a stale unpaid booking can't take a newer job's payment.
+        var matches: [UUID: LedgerEntry] = [:], taken = Set<UUID>()
+        for pair in pairs.sorted(by: { $0.rank < $1.rank }) {
+            guard matches[pair.job.id] == nil, let id = pair.entry.jobID, !taken.contains(id) else { continue }
+            matches[pair.job.id] = pair.entry; taken.insert(id)
         }
         return matches
     }

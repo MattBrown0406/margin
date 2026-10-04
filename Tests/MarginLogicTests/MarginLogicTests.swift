@@ -131,6 +131,20 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(months[0].gap == -500)
     }
 
+    @Test func aStaleUnpaidBookingNeverTakesANewerJobsPayment() {
+        // "Bend" A was expected Aug 1 and never paid; "Bend" B was expected Sep 25 and paid Sep 28.
+        let job = UUID()
+        let a = BookedJobInfo(id: UUID(), title: "Bend", expectedDate: day(2026, 8, 1), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 7, 1))
+        let b = BookedJobInfo(id: UUID(), title: "Bend", expectedDate: day(2026, 9, 25), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 9, 1))
+        let paid = [gross(7500, day(2026, 9, 28), job: job, title: "Bend"), net(4500, day(2026, 9, 29), job: job)]
+        let matches = CashFlowForecast.likelyPayments(for: [a, b], entries: paid, claimed: [], calendar: calendar)
+        #expect(matches[b.id]?.jobID == job)
+        #expect(matches[a.id] == nil)
+        let months = CashFlowForecast.months(entries: paid, booked: CashFlowForecast.unpaid([a, b], entries: paid, claimed: [], calendar: calendar),
+                                             plannedMonthly: 0, now: now, count: 1, calendar: calendar)
+        #expect(months[0].expectedNet == 0)   // A is past the grace period; B is paid
+    }
+
     @Test func anUnlinkedNetTransferCanCloseABooking() {
         // Only the personal account is connected: the $4,500 owner transfer arrives without a recorded Gross.
         let transfer = net(4500, day(2026, 10, 18), job: UUID())
