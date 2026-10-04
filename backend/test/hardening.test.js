@@ -97,6 +97,16 @@ test('failed questions (429/502/503) hand back both quota slots; answers and ref
   } finally { await f.close(); }
 });
 
+test('a billed reply with no text keeps its quota, so empty replies cannot spend past the caps', async () => {
+  const askLimiter = createAskLimiter(), askGlobalLimiter = createAskLimiter({ limit: 1000 });
+  const assistant = { async answer() { return readAnswer({ stop_reason: 'max_tokens', content: [{ type: 'thinking', thinking: '' }] }); } };
+  const f = await fixture({ assistant, askLimiter, askGlobalLimiter });
+  try {
+    for (let i = 0; i < 30; i++) assert.equal((await f.post('/v1/ask', { question: 'q', context: snapshot })).status, 502, `billed failure #${i + 1}`);
+    assert.deepEqual(await f.post('/v1/ask', { question: 'q', context: snapshot }), { status: 429, data: { error: 'Daily question limit reached' } });
+  } finally { await f.close(); }
+});
+
 test('context is validated structurally (depth, size, cycles) and hostile nesting is a 400, not a 500', async () => {
   const nest = levels => { let value = 1; for (let i = 0; i < levels; i++) value = { v: value }; return value; }; // `levels` nested objects
   assert.equal(isAskContext(nest(6)), true);

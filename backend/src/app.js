@@ -17,6 +17,8 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 const publicCode = (error, status) => typeof error.code === 'string' && ERROR_CODE.test(error.code) && (status < 500 || error.plaid === true) ? error.code : undefined;
 const GLOBAL_ASK_KEY = '*';
 // Ask failures that cost the user nothing useful (and, for 503/429, aren't billed): their quota slots are handed back.
+// Failures that cost nothing (rate limits, outages, an upstream API error) hand their quota back; a billed
+// response with no usable text (error.billed) keeps it, or empty replies could spend past the caps.
 const ASK_UNCOUNTED = new Set([429, 502, 503]);
 const APPLE_RETRY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -151,7 +153,7 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         if (!askGlobalLimiter.take(GLOBAL_ASK_KEY)) { askLimiter.release(userId); throw httpError(429, 'Ask Margin is at capacity today'); }
         let answer;
         try { answer = await assistant.answer({ question, context }); }
-        catch (error) { if (ASK_UNCOUNTED.has(Number(error.status))) { askLimiter.release(userId); askGlobalLimiter.release(GLOBAL_ASK_KEY); } throw error; }
+        catch (error) { if (ASK_UNCOUNTED.has(Number(error.status)) && !error.billed) { askLimiter.release(userId); askGlobalLimiter.release(GLOBAL_ASK_KEY); } throw error; }
         return json(res, 200, { answer });
       }
       return json(res, 404, { error: 'Not found' });

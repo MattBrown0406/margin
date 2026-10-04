@@ -1,6 +1,8 @@
 // "Ask Margin": explains an affordability verdict the phone already computed, using Claude.
 // The SDK is loaded lazily so tests and the bank routes run without it installed.
-const httpError = (status, message) => Object.assign(new Error(message), { status, expose: true });
+const httpError = (status, message, extra = {}) => Object.assign(new Error(message), { status, expose: true, ...extra });
+// A completed response is billed even when it carries no usable text, so its quota is never handed back.
+const billedFailure = () => httpError(502, 'Ask Margin could not answer right now', { billed: true });
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const MAX_TOKENS = 3000;
 const CONTEXT_MAX_DEPTH = 6, CONTEXT_MAX_ENTRIES = 400;
@@ -20,8 +22,8 @@ You receive a budget snapshot (JSON computed on their phone) and one question, u
 export function readAnswer(response) {
   if (response?.stop_reason === 'refusal') throw httpError(422, "Margin can't help with that question.");
   const text = (Array.isArray(response?.content) ? response.content : []).filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text).join('').trim();
-  if (response?.stop_reason === 'max_tokens') { if (text) return text; throw httpError(502, 'Ask Margin could not answer right now'); }
-  if (!text) throw httpError(502, 'Ask Margin could not answer right now');
+  if (response?.stop_reason === 'max_tokens') { if (text) return text; throw billedFailure(); }
+  if (!text) throw billedFailure();
   return text;
 }
 
