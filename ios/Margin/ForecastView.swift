@@ -24,7 +24,9 @@ struct ForecastView: View {
     /// Paid jobs whose Net transfers so far fall short, with what's still expected — shown so it's never invisible.
     private var awaitingTransfers: [(job: BookedJob, remaining: Double)] {
         let expected = Dictionary(BookedJob.expectedIncome(bookedJobs, entries: entries).map { ($0.id, $0.expectedNet) }, uniquingKeysWith: { a, _ in a })
-        return bookedJobs.filter { $0.status == "paid" }.compactMap { job in expected[job.id].map { (job, $0) } }.sorted { $0.job.expectedDate < $1.job.expectedDate }
+        // Only jobs the forecast still counts (within the overdue grace), so the caption below stays true.
+        let graceStart = Calendar.current.date(byAdding: .day, value: -CashFlowForecast.overdueGraceDays, to: .now) ?? .distantPast
+        return bookedJobs.filter { $0.status == "paid" && $0.expectedDate >= graceStart }.compactMap { job in expected[job.id].map { (job, $0) } }.sorted { $0.job.expectedDate < $1.job.expectedDate }
     }
 
     var body: some View {
