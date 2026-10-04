@@ -8,7 +8,7 @@ export class PlaidClient {
     if (!this.config.plaidClientId || !this.config.plaidSecret) throw Object.assign(new Error('Plaid credentials are not configured'), { status: 503 });
     const response = await this.fetch(`${hosts[this.config.plaidEnv]}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_id: this.config.plaidClientId, secret: this.config.plaidSecret, ...body }), signal: AbortSignal.timeout(15000) });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) { const error = new Error(data.error_message || 'Plaid request failed'); error.status = data.error_code === 'ITEM_LOGIN_REQUIRED' ? 409 : 502; error.code = data.error_code; throw error; }
+    if (!response.ok) { const error = new Error(data.error_message || 'Plaid request failed'); error.status = data.error_code === 'ITEM_LOGIN_REQUIRED' ? 409 : 502; error.code = data.error_code; error.plaid = true; throw error; }
     return data;
   }
   createLinkToken(userId, accessToken) { return this.call('/link/token/create', { user: { client_user_id: userId }, client_name: 'Margin', ...(accessToken ? { access_token: accessToken } : { products: ['transactions'], transactions: { days_requested: 180 } }), country_codes: ['US'], language: 'en', ...(this.config.plaidRedirectUri ? { redirect_uri: this.config.plaidRedirectUri } : {}) }); }

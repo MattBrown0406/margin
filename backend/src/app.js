@@ -1,6 +1,7 @@
 import http from 'node:http';
-import { verifyBearerToken, signToken } from './auth.js';
-import { createAskLimiter } from './assistant.js';
+import { verifyBearerToken, signToken, isRevoked, sessionEnded } from './auth.js';
+import { createAskLimiter, isAskContext } from './assistant.js';
+import { MAX_SESSION_TTL_DAYS } from './config.js';
 
 const json = (res, status, body) => { const data = JSON.stringify(body); res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(data), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(data); };
 const cleanText = (value, max = 100) => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -10,10 +11,16 @@ const mapAccount = a => ({ id: a.account_id, name: cleanText(a.name), officialNa
 const mapTransaction = t => ({ id: t.transaction_id, accountId: t.account_id, name: cleanText(t.merchant_name || t.name), amount: t.amount, date: t.authorized_date || t.date, pending: Boolean(t.pending), category: t.personal_finance_category?.primary || 'GENERAL_MERCHANDISE' });
 // Plaid no longer knows this Item, so there is nothing left to revoke remotely.
 const ALREADY_REMOVED = new Set(['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN']);
-const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+// Plaid-style error codes only; numeric or system codes (23, ENOTDIR) never reach a client.
+const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
+const publicCode = (error, status) => typeof error.code === 'string' && ERROR_CODE.test(error.code) && (status < 500 || error.plaid === true) ? error.code : undefined;
+const GLOBAL_ASK_KEY = '*';
 
-// apple/assistant are optional: without them their routes answer 503 and everything else works.
-export function createApp({ config, plaid, store, apple = null, assistant = null, askLimiter = createAskLimiter() }) {
+// apple/appleTokens/assistant are optional: without them their routes answer 503 (or, for appleTokens,
+// Apple token exchange/revocation is skipped) and everything else works. `now` is injectable for tests.
+export function createApp({ config, plaid, store, apple = null, appleTokens = null, assistant = null, askLimiter = createAskLimiter(), askGlobalLimiter = createAskLimiter({ limit: config.askDailyGlobalLimit || 2000 }), now = () => Date.now() }) {
+  const nowS = () => Math.floor(now() / 1000);
+  const warn = (message, error) => console.warn(`${message}: ${error?.message || 'unknown error'}`);
   // Revokes the Item at Plaid (tolerating Items Plaid already forgot) before dropping it locally,
   // so a failed revoke never leaves a billed Item we can no longer reach.
   const disconnect = async (userId, itemId) => {
@@ -27,15 +34,24 @@ export function createApp({ config, plaid, store, apple = null, assistant = null
       if (req.method === 'GET' && pathname === '/health') return json(res, 200, { ok: true, plaidEnvironment: config.plaidEnv, credentialsConfigured: Boolean(config.plaidClientId && config.plaidSecret) });
       if (req.method === 'POST' && pathname === '/v1/auth/apple') {
         if (!apple || !config.appleBundleId || !config.jwtSecret || config.jwtSecret.length < 32) throw httpError(503, 'Sign in with Apple is not configured');
-        const input = await body(req), identityToken = typeof input.identityToken === 'string' ? input.identityToken : '', nonce = typeof input.nonce === 'string' ? input.nonce : '';
+        const input = await body(req), identityToken = typeof input.identityToken === 'string' ? input.identityToken : '', nonce = typeof input.nonce === 'string' ? input.nonce : '', authorizationCode = input.authorizationCode ?? '';
         if (!identityToken || identityToken.length > 4096 || !nonce || nonce.length > 128) throw httpError(400, 'identityToken and nonce are required');
-        const claims = await apple.verify(identityToken, nonce);
-        const iat = Math.floor(Date.now() / 1000), exp = iat + (config.sessionTtlDays || 30) * 86400, userId = `apple:${claims.sub}`;
+        if (typeof authorizationCode !== 'string' || authorizationCode.length > 1024) throw httpError(400, 'authorizationCode must be a string of at most 1024 characters');
+        const claims = await apple.verify(identityToken, nonce), userId = `apple:${claims.sub}`;
+        // Kept so account deletion can revoke the user's Apple tokens; never allowed to fail sign-in.
+        if (authorizationCode && appleTokens?.configured) {
+          try { const refreshToken = await appleTokens.exchange(authorizationCode); if (refreshToken) await store.saveAppleRefreshToken(userId, refreshToken); }
+          catch (error) { warn('Apple authorization code exchange failed', error); }
+        }
+        // iat is always after the user's last revocation (see isRevoked), so a new sign-in is never born revoked.
+        const revokedAt = await store.sessionsRevokedAt(userId);
+        const iat = Math.max(nowS(), (revokedAt ?? -1) + 1), exp = iat + Math.min(config.sessionTtlDays || 30, MAX_SESSION_TTL_DAYS) * 86400;
         const sessionToken = signToken({ sub: userId, ...(config.jwtIssuer ? { iss: config.jwtIssuer } : {}), ...(config.jwtAudience ? { aud: config.jwtAudience } : {}), iat, exp }, config.jwtSecret);
         return json(res, 200, { sessionToken, expiresAt: new Date(exp * 1000).toISOString(), userId });
       }
-      const session = verifyBearerToken(req.headers.authorization, config.jwtSecret, Date.now(), { issuer: config.jwtIssuer, audience: config.jwtAudience });
+      const session = verifyBearerToken(req.headers.authorization, config.jwtSecret, now(), { issuer: config.jwtIssuer, audience: config.jwtAudience });
       const userId = session.sub;
+      if (isRevoked(session.iat, await store.sessionsRevokedAt(userId))) throw sessionEnded();
 
       if (req.method === 'POST' && pathname === '/v1/plaid/link-token') {
         // With an itemId this creates an update-mode token so the user can repair a broken login.
@@ -50,7 +66,10 @@ export function createApp({ config, plaid, store, apple = null, assistant = null
         const exchanged = await plaid.exchange(publicToken);
         // Persist the access token before any further call can fail, so the Item is never orphaned
         // (still billed by Plaid but impossible to disconnect).
-        await store.saveItem(userId, { itemId: exchanged.item_id, accessToken: exchanged.access_token, institutionName, accounts: [] });
+        // saveItem refuses once this session was revoked (e.g. the account was deleted mid-link); the new
+        // Item is then removed at Plaid so nothing billed is left behind.
+        try { await store.saveItem(userId, { itemId: exchanged.item_id, accessToken: exchanged.access_token, institutionName, accounts: [] }, session.iat); }
+        catch (error) { try { await plaid.remove(exchanged.access_token); } catch (removeError) { warn('Could not remove an unsaved Plaid Item', removeError); } throw error; }
         let accounts = [];
         try { accounts = (await plaid.accounts(exchanged.access_token)).accounts.map(mapAccount); await store.updateItem(userId, exchanged.item_id, { accounts }); }
         catch { /* Accounts are refreshed on the next sync. */ }
@@ -83,16 +102,33 @@ export function createApp({ config, plaid, store, apple = null, assistant = null
       if (req.method === 'DELETE' && pathname === '/v1/account') {
         // Items are revoked one by one; a non-recoverable Plaid failure stops here so the rest stay
         // reachable and the client can retry. The user record goes only once no Items remain.
-        for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId);
+        // Once Items are gone: revoke Apple tokens (best effort), end every session (which also stops
+        // a link racing this request from saving), revoke anything linked before that, delete the user.
+        const disconnectAll = async () => { for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId); };
+        await disconnectAll();
+        if (appleTokens?.configured) {
+          try { const refreshToken = await store.getAppleRefreshToken(userId); if (refreshToken) await appleTokens.revoke(refreshToken); }
+          catch (error) { warn('Apple token revocation failed', error); }
+        }
+        await store.revokeSessions(userId, nowS());
+        await disconnectAll();
         await store.deleteUser(userId);
         return json(res, 200, { deleted: true });
+      }
+      if (req.method === 'DELETE' && pathname === '/v1/session') {
+        // Sign out everywhere: every session issued up to now stops working.
+        await store.revokeSessions(userId, nowS());
+        return json(res, 200, { signedOut: true });
       }
       if (req.method === 'POST' && pathname === '/v1/ask') {
         if (!assistant) throw httpError(503, "Ask Margin isn't configured");
         const input = await body(req), question = typeof input.question === 'string' ? input.question.trim() : '', context = input.context;
         if (!question || question.length > 500) throw httpError(400, 'question must be 1-500 characters');
-        if (!isPlainObject(context) || JSON.stringify(context).length > 8000) throw httpError(400, 'context must be an object of at most 8000 characters');
+        let size = Infinity;
+        if (isAskContext(context)) try { size = JSON.stringify(context).length; } catch { /* rejected below */ }
+        if (size > 8000) throw httpError(400, 'context must be an object of at most 8000 characters');
         if (!askLimiter.take(userId)) throw httpError(429, 'Daily question limit reached');
+        if (!askGlobalLimiter.take(GLOBAL_ASK_KEY)) { askLimiter.release(userId); throw httpError(429, 'Ask Margin is at capacity today'); }
         return json(res, 200, { answer: await assistant.answer({ question, context }) });
       }
       return json(res, 404, { error: 'Not found' });
@@ -100,7 +136,7 @@ export function createApp({ config, plaid, store, apple = null, assistant = null
       const status = Number(error.status) || 500;
       // Only our own fixed messages (expose) may describe a 5xx; anything else could leak upstream detail.
       const safeMessage = status >= 500 && status !== 503 && !error.expose ? 'Bank service temporarily unavailable' : error.message;
-      return json(res, status, { error: safeMessage, code: error.code || undefined });
+      return json(res, status, { error: safeMessage, code: publicCode(error, status) });
     }
   });
 }

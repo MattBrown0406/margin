@@ -126,16 +126,18 @@ test('Apple sign-in rejects malformed bodies and reports 503 when unconfigured o
 test('Apple keys are cached for an hour and refetched once for an unknown kid', async () => {
   let clock = Date.now();
   const fetchImpl = jwks([keyA]), verifier = new AppleIdentityVerifier({ bundleId, fetchImpl, now: () => clock });
-  await verifier.verify(appleToken(), rawNonce);
-  await verifier.verify(appleToken(), rawNonce);
+  // Identity tokens are single use, so each verification signs a fresh nonce.
+  const fresh = (nonce, claims = {}, options) => verifier.verify(appleToken(appleClaims({ nonce: sha256Hex(nonce), ...claims }), options), nonce);
+  await fresh('n1');
+  await fresh('n2');
   assert.equal(fetchImpl.calls, 1);
   clock += 2 * 60 * 1000; fetchImpl.keys = [keyA, keyB]; // Apple rotates in key-b
-  assert.equal((await verifier.verify(appleToken(appleClaims(), { key: keyB }), rawNonce)).sub, appleClaims().sub);
+  assert.equal((await fresh('n3', {}, { key: keyB })).sub, appleClaims().sub);
   assert.equal(fetchImpl.calls, 2);
-  await assert.rejects(verifier.verify(appleToken(appleClaims(), { key: keyB, kid: 'unknown' }), rawNonce), { status: 401 });
+  await assert.rejects(fresh('n4', {}, { key: keyB, kid: 'unknown' }), { status: 401 });
   assert.equal(fetchImpl.calls, 2, 'unknown kids cannot force back-to-back refetches');
   clock += 61 * 60 * 1000;
-  await verifier.verify(appleToken(appleClaims({ exp: Math.floor(clock / 1000) + 600 })), rawNonce);
+  await fresh('n5', { exp: Math.floor(clock / 1000) + 600 });
   assert.equal(fetchImpl.calls, 3, 'cache expires after an hour');
 });
 
@@ -150,7 +152,7 @@ test('account deletion revokes every Item, tolerates ITEM_NOT_FOUND, and wipes t
     assert.equal(status, 200); assert.deepEqual(data, { deleted: true });
     assert.deepEqual(plaid.removedTokens.sort(), ['access-a', 'access-b']);
     assert.equal(Object.hasOwn((await f.readDisk()).users, 'matt'), false);
-    assert.deepEqual((await f.call('/v1/plaid/accounts')).data.connections, []);
+    assert.equal((await f.call('/v1/plaid/accounts')).status, 401, 'the deleted account\'s session is revoked');
   } finally { await f.close(); }
 });
 
@@ -238,13 +240,15 @@ test('createAssistant is off without a key and sends the documented request thro
   class AuthenticationError extends APIError {}
   const requests = [];
   let outcome = () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Fits in November.' }] });
-  class Anthropic { constructor(options) { this.options = options; this.beta = { messages: { create: async params => { requests.push(params); return outcome(); } } }; } }
+  const constructed = [];
+  class Anthropic { constructor(options) { this.options = options; constructed.push(options); this.beta = { messages: { create: async params => { requests.push(params); return outcome(); } } }; } }
   Object.assign(Anthropic, { APIError, RateLimitError, AuthenticationError });
   let loads = 0;
   const assistant = createAssistant({ anthropicApiKey: 'sk-test', anthropicModel: 'claude-opus-5-5' }, { loadSdk: async () => { loads++; return { default: Anthropic }; } });
   assert.equal(await assistant.answer({ question: 'Can I?', context: snapshot }), 'Fits in November.');
   const sent = requests[0];
-  assert.deepEqual({ ...sent, system: undefined, messages: undefined }, { model: 'claude-opus-5-5', max_tokens: 8000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'medium' }, system: undefined, messages: undefined });
+  assert.deepEqual({ ...sent, system: undefined, messages: undefined }, { model: 'claude-opus-5-5', max_tokens: 3000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' }, system: undefined, messages: undefined });
+  assert.deepEqual(constructed, [{ apiKey: 'sk-test', maxRetries: 1 }]);
   assert.equal(sent.system, SYSTEM_PROMPT);
   assert.deepEqual(sent.messages, [{ role: 'user', content: `Budget snapshot (JSON, computed on the user's phone):\n${JSON.stringify(snapshot)}\n\nQuestion: Can I?` }]);
   for (const [ErrorClass, status] of [[RateLimitError, 429], [AuthenticationError, 503], [APIError, 502]]) {
@@ -265,6 +269,6 @@ test('config validates the session TTL and defaults the new settings', () => {
   const base = { TOKEN_ENCRYPTION_KEY: encryptionKey };
   const config = loadConfig(base);
   assert.deepEqual([config.appleBundleId, config.sessionTtlDays, config.anthropicApiKey, config.anthropicModel], ['', 30, '', 'claude-opus-5-5']);
-  assert.equal(loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: '365' }).sessionTtlDays, 365);
-  for (const bad of ['0', '366', '1.5', 'thirty', '-3']) assert.throws(() => loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: bad }), /MARGIN_SESSION_TTL_DAYS/);
+  assert.equal(loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: '90' }).sessionTtlDays, 90);
+  for (const bad of ['0', '91', '365', '1.5', 'thirty', '-3']) assert.throws(() => loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: bad }), /MARGIN_SESSION_TTL_DAYS/);
 });
