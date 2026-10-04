@@ -70,7 +70,7 @@ enum CashFlowForecast {
         let grossJobIDs = Set(entries.filter(\.isGross).compactMap(\.jobID))
         let close: (Double, Double) -> Bool = { actual, expected in expected > 0 && abs(actual - expected) <= expected * 0.05 }
         // Every plausible (booking, payment) pair…
-        var pairs: [(job: BookedJobInfo, entry: LedgerEntry, rank: (Int, Int, TimeInterval))] = []
+        var pairs: [(job: BookedJobInfo, entry: LedgerEntry, rank: (Int, Int, Int, TimeInterval))] = []
         for job in booked {
             guard let windowStart = calendar.date(byAdding: .day, value: -30, to: job.expectedDate),
                   // A booking keeps counting for `overdueGraceDays`, so a payment that late must still match it.
@@ -85,8 +85,10 @@ enum CashFlowForecast {
                 let sameTitle = !job.title.isEmpty && normalize(entry.title) == normalize(job.title)
                 let plausible = entry.isGross ? (sameTitle || close(entry.amount, job.expectedGross))
                     : entry.isNet && !tracksGross && !grossJobIDs.contains(id) && (sameTitle || close(entry.amount, job.expectedNet))
-                // Prefer a Gross receipt, then a matching title over an amount-only match, then the closest date.
-                if plausible { pairs.append((job, entry, (entry.isGross ? 0 : 1, sameTitle ? 0 : 1, abs(entry.date.timeIntervalSince(job.expectedDate))))) }
+                // Prefer a Gross receipt, then a matching title, then a matching amount (one client, several bookings),
+                // then the closest date.
+                let amountMatches = close(entry.amount, entry.isGross ? job.expectedGross : job.expectedNet)
+                if plausible { pairs.append((job, entry, (entry.isGross ? 0 : 1, sameTitle ? 0 : 1, amountMatches ? 0 : 1, abs(entry.date.timeIntervalSince(job.expectedDate))))) }
             }
         }
         // …assigned closest-first across all bookings, so a stale unpaid booking can't take a newer job's payment.
@@ -98,17 +100,41 @@ enum CashFlowForecast {
         return matches
     }
 
-    /// Bookings whose Net should still count as expected income:
-    /// - open bookings with no likely recorded payment;
-    /// - bookings whose Gross has arrived (matched, or linked when marked paid) but whose Net transfer hasn't been
-    ///   recorded yet — the money is in the business account, not yet in the personal one.
+    /// Bookings whose Net should still count as expected income, with `expectedNet` reduced to what's still to come:
+    /// - open bookings with no likely recorded payment (full expected Net);
+    /// - bookings whose Gross has arrived (matched, or linked when marked paid) whose transfers so far fall short of
+    ///   the expected Net — Net is often moved in instalments. An unlinked Net transfer (no recorded Gross of its own)
+    ///   dated from the Gross to 30 days after it, within 5% of what's outstanding, counts as that job's transfer.
     static func expectedNet(open: [BookedJobInfo], paid: [(booking: BookedJobInfo, jobID: UUID)], entries: [LedgerEntry], calendar: Calendar = .current) -> [BookedJobInfo] {
         let claimed = Set(paid.map(\.jobID))
         let matches = likelyPayments(for: open, entries: entries, claimed: claimed, calendar: calendar)
-        let grossJobIDs = Set(entries.filter(\.isGross).compactMap(\.jobID)), netJobIDs = Set(entries.filter(\.isNet).compactMap(\.jobID))
-        let awaitingTransfer: (UUID) -> Bool = { grossJobIDs.contains($0) && !netJobIDs.contains($0) }
-        return open.filter { job in matches[job.id].map { $0.isGross && $0.jobID.map(awaitingTransfer) == true } ?? true }
-            + paid.filter { awaitingTransfer($0.jobID) }.map(\.booking)
+        let grossByJob = Dictionary(entries.filter(\.isGross).compactMap { e in e.jobID.map { ($0, e) } }, uniquingKeysWith: { a, _ in a })
+        let usedByMatching = Set(matches.values.compactMap(\.jobID))
+        var usedUnlinked = Set<UUID>()
+        func outstanding(_ booking: BookedJobInfo, jobID: UUID) -> BookedJobInfo? {
+            guard let receipt = grossByJob[jobID] else { return nil }   // paid via a Net (Net-only): nothing more to expect
+            let linked = entries.filter { $0.isNet && $0.jobID == jobID }.total
+            var remaining = booking.expectedNet - linked
+            if remaining > 0.005, let windowEnd = calendar.date(byAdding: .day, value: 30, to: receipt.date),
+               let transfer = entries.first(where: { e in
+                   guard e.isNet, let id = e.jobID, grossByJob[id] == nil, !usedByMatching.contains(id), !usedUnlinked.contains(id) else { return false }
+                   return e.date >= calendar.startOfDay(for: receipt.date) && e.date <= windowEnd && abs(e.amount - remaining) <= remaining * 0.05
+               }), let id = transfer.jobID {
+                usedUnlinked.insert(id); remaining -= transfer.amount
+            }
+            guard remaining > 0.005 else { return nil }
+            var result = booking; result.expectedNet = remaining
+            return result
+        }
+        var result: [BookedJobInfo] = []
+        for job in open.sorted(by: { $0.expectedDate < $1.expectedDate }) {
+            guard let match = matches[job.id] else { result.append(job); continue }
+            if match.isGross, let id = match.jobID, let left = outstanding(job, jobID: id) { result.append(left) }
+        }
+        for (booking, id) in paid.sorted(by: { $0.booking.expectedDate < $1.booking.expectedDate }) {
+            if let left = outstanding(booking, jobID: id) { result.append(left) }
+        }
+        return result
     }
 
     /// Open bookings that should still count as expected income: those with no likely recorded payment.

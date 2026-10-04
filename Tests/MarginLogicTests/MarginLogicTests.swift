@@ -292,3 +292,68 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(no.suggestedMonthlySetAside == (1200 + 8000) / 3.0)
     }
 }
+
+private func acmeGross(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "Acme") -> LedgerEntry {
+    LedgerEntry(date: date, amount: a, category: "Intervention income", isIncome: true, ledgerScope: "business", incomeKind: "gross", jobID: job, title: title)
+}
+private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "Acme") -> LedgerEntry {
+    LedgerEntry(date: date, amount: a, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: job, title: title)
+}
+
+/// Regression tests for booking↔payment edge cases found by audit round 6.
+@Suite struct BookingEdgeCaseTests {
+    let now = day(2026, 10, 22)
+
+    // 1. Net installments: first partial transfer erases the whole remaining expected Net.
+    @Test func installmentDropsRemainingNet() {
+        let booking = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 12), expectedGross: 10000, expectedNet: 6000, bookedAt: day(2026, 9, 1))
+        let job = UUID()
+        let entries = [acmeGross(10000, day(2026, 10, 10), job), acmeNet(1000, day(2026, 10, 15), job)]
+        // open + matched
+        let open = CashFlowForecast.expectedNet(open: [booking], paid: [], entries: entries, calendar: calendar)
+        // confirmed paid
+        let paid = CashFlowForecast.expectedNet(open: [], paid: [(booking, job)], entries: entries, calendar: calendar)
+        let m = CashFlowForecast.months(entries: entries, booked: open, plannedMonthly: 6000, now: now, count: 1, calendar: calendar)
+        #expect(m[0].receivedNet + m[0].expectedNet == 6000)   // truth: 1000 in + 5000 still to transfer
+    }
+
+    // 2. Gross tracker imports the Net transfer unlinked (BankSync default "Not linked").
+    @Test func unlinkedNetAfterMatchedGrossDoubleCounts() {
+        let booking = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 12), expectedGross: 10000, expectedNet: 6000, bookedAt: day(2026, 9, 1))
+        let entries = [acmeGross(10000, day(2026, 10, 10), UUID()), acmeNet(6000, day(2026, 10, 15), UUID(), "ONLINE TRANSFER FROM CHK 1234")]
+        let open = CashFlowForecast.expectedNet(open: [booking], paid: [], entries: entries, calendar: calendar)
+        let m = CashFlowForecast.months(entries: entries, booked: open, plannedMonthly: 10000, now: now, count: 1, calendar: calendar)
+        #expect(m[0].receivedNet + m[0].expectedNet == 6000)
+    }
+
+    // 3a. Recurring client, two bookings in a month: amount ignored among same-title matches.
+    @Test func sameTitleIgnoresAmount() {
+        let a = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 5), expectedGross: 5000, expectedNet: 3000, bookedAt: day(2026, 9, 1))
+        let b = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 20), expectedGross: 3000, expectedNet: 1800, bookedAt: day(2026, 9, 1))
+        let job = UUID()
+        let entries = [acmeGross(3000, day(2026, 10, 6), job), acmeNet(1800, day(2026, 10, 8), job)]
+        let likely = CashFlowForecast.likelyPayments(for: [a, b], entries: entries, claimed: [], calendar: calendar)
+        let exp = CashFlowForecast.expectedNet(open: [a, b], paid: [], entries: entries, calendar: calendar)
+        let m = CashFlowForecast.months(entries: entries, booked: exp, plannedMonthly: 0, now: now, count: 1, calendar: calendar)
+        #expect(likely[b.id]?.jobID == job)
+    }
+
+    // 3b. A's exact-amount Gross arrives late, closer to B's date.
+    @Test func lateExactAmountGoesToOtherBooking() {
+        let a = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 5), expectedGross: 5000, expectedNet: 3000, bookedAt: day(2026, 9, 1))
+        let b = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 20), expectedGross: 3000, expectedNet: 1800, bookedAt: day(2026, 9, 1))
+        let job = UUID()
+        let likely = CashFlowForecast.likelyPayments(for: [a, b], entries: [acmeGross(5000, day(2026, 10, 14), job)], claimed: [], calendar: calendar)
+        #expect(likely[a.id]?.jobID == job)
+    }
+
+    // 4. Future purchase drains surplus a later booked month needs.
+    @Test func futurePurchaseCreatesLaterShortfall() {
+        let nov = BookedJobInfo(id: UUID(), title: "Nov", expectedDate: day(2026, 11, 5), expectedGross: 13000, expectedNet: 9000)
+        let dec = BookedJobInfo(id: UUID(), title: "Dec", expectedDate: day(2026, 12, 5), expectedGross: 2000, expectedNet: 1000)
+        let f = CashFlowForecast.months(entries: [acmeNet(4000, day(2026, 10, 2), UUID())], booked: [nov, dec], plannedMonthly: 4000, now: now, count: 3, calendar: calendar)
+        let safe = SafeToSpend.make(limit: 900, spentBeforeToday: 400, spentToday: 0, now: now, calendar: calendar)
+        let v = Affordability.evaluate(amount: 3000, in: day(2026, 11, 15), now: now, safe: safe, forecast: f, calendar: calendar)
+        #expect(v.level == .notYet)
+    }
+}

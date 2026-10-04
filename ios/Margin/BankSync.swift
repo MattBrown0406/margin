@@ -111,7 +111,8 @@ struct BankAccountsView: View {
     @State private var reviewScopes: [String: String] = [:]
     @State private var reviewIncomeKinds: [String: String] = [:]
     @State private var reviewCategories: [String: String] = [:]
-    @State private var reviewJobs: [String: UUID] = [:]
+    /// The job each review item is tied to. An explicit "Not linked" is stored as `.some(nil)`.
+    @State private var reviewJobs: [String: UUID?] = [:]
     @State private var pendingDisconnect: BankConnectionDTO?
 
     /// Only transactions that still need a decision: not yet imported and not skipped.
@@ -180,7 +181,7 @@ struct BankAccountsView: View {
                                     Text("Gross → Business").tag("gross"); Text("Net → Personal").tag("net"); Text("Refund").tag("refund")
                                 }.pickerStyle(.segmented)
                                 if reviewIncomeKind(tx) == "net", !linkableJobs.isEmpty {
-                                    Picker("For job", selection: Binding(get: { reviewJobs[tx.id] }, set: { reviewJobs[tx.id] = $0 })) {
+                                    Picker("For job", selection: Binding(get: { netJob(for: tx) }, set: { reviewJobs[tx.id] = .some($0) })) {
                                         Text("Not linked").tag(UUID?.none)
                                         ForEach(linkableJobs) { job in Text("\(job.title) · \(job.date.formatted(date: .abbreviated, time: .omitted))").tag(job.jobID) }
                                     }
@@ -194,7 +195,7 @@ struct BankAccountsView: View {
                                     ForEach(categoryOptions(for: reviewScope(tx)), id: \.self) { Text($0).tag($0) }
                                 }
                                 if reviewScope(tx) == "business", !linkableJobs.isEmpty {
-                                    Picker("For job", selection: Binding(get: { reviewJobs[tx.id] }, set: { reviewJobs[tx.id] = $0 })) {
+                                    Picker("For job", selection: Binding(get: { reviewJobs[tx.id] ?? nil }, set: { reviewJobs[tx.id] = .some($0) })) {
                                         Text("Not tied to a job").tag(UUID?.none)
                                         ForEach(linkableJobs) { job in Text("\(job.title) · \(job.date.formatted(date: .abbreviated, time: .omitted))").tag(job.jobID) }
                                     }
@@ -246,6 +247,16 @@ struct BankAccountsView: View {
         let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .distantPast
         return existing.filter { $0.isIncome && $0.incomeKind == "gross" && $0.jobID != nil && $0.date >= cutoff }.sorted { $0.date > $1.date }
     }
+    /// The job an imported Net transfer belongs to: the person's choice, else the recent job still waiting for a
+    /// transfer whose Gross arrived closest before it. Leaving it unlinked would count that job's Net twice.
+    private func netJob(for tx: ImportedBankTransaction) -> UUID? {
+        if let chosen = reviewJobs[tx.id] { return chosen }
+        guard let date = ISO8601DateFormatter.marginDate.date(from: tx.date) else { return nil }
+        let transferred = Set(existing.filter { $0.isIncome && $0.incomeKind == "net" }.compactMap(\.jobID))
+        return linkableJobs.filter { job in job.jobID.map { !transferred.contains($0) } == true && job.date <= date.addingTimeInterval(3 * 86_400) }
+            .min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }?.jobID
+    }
+
     /// Plaid ids change when a bank is reconnected, and manual entries have none, so also look for an
     /// existing entry with the same amount within three days.
     private func possibleDuplicate(of tx: ImportedBankTransaction) -> Transaction? {
@@ -262,13 +273,13 @@ struct BankAccountsView: View {
         let date = ISO8601DateFormatter.marginDate.date(from: imported.date) ?? .now
         let tx: Transaction
         if let kind = creditKind, kind != "refund" {
-            let jobID = kind == "net" ? (reviewJobs[imported.id] ?? UUID()) : UUID()
+            let jobID = kind == "net" ? (netJob(for: imported) ?? UUID()) : UUID()
             tx = Transaction(title: imported.name, amount: abs(imported.amount), date: date, category: kind == "gross" ? "Intervention income" : "Owner transfer", isIncome: true, ledgerScope: kind == "gross" ? "business" : "personal", incomeKind: kind, jobID: jobID)
         } else {
             // A refund is stored as a negative expense so it reduces spending in its category.
             let scope = reviewScope(imported)
             tx = Transaction(title: imported.name, amount: creditKind == "refund" ? -abs(imported.amount) : imported.amount, date: date, category: reviewCategory(imported), ledgerScope: scope,
-                             jobID: scope == "business" ? reviewJobs[imported.id] : nil)
+                             jobID: scope == "business" ? (reviewJobs[imported.id] ?? nil) : nil)
         }
         tx.externalID = imported.id; tx.externalAccountID = imported.accountId; tx.isPending = false
         context.insert(tx); try? context.save()

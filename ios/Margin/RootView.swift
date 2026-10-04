@@ -261,7 +261,7 @@ struct InterventionIncomeView: View {
             if !earlierEntries.isEmpty {
                 DisclosureGroup("Earlier jobs (\(earlierEntries.count))") { VStack(spacing: 12) { ForEach(earlierEntries) { jobCard($0) } }.padding(.top, 8) }.tint(.marginInk)
             }
-        }.sheet(item: $selectedGross) { RecordNetTransferView(grossEntry: $0) }
+        }.sheet(item: $selectedGross) { RecordNetTransferView(grossEntry: $0, transactions: transactions) }
     }
 
     private func jobCard(_ job: Transaction) -> some View {
@@ -292,15 +292,37 @@ struct IncomeTotalCard: View {
 struct RecordNetTransferView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
     let grossEntry: Transaction
+    let transactions: [Transaction]
     @State private var amount = ""; @State private var date = Date()
+    @State private var existingID: UUID?
+    private var existing: Transaction? { existingID.flatMap { id in unlinkedTransfers.first { $0.id == id } } }
+
+    /// Transfers already recorded (e.g. a bank import left "Not linked") that aren't tied to any job's Gross.
+    private var unlinkedTransfers: [Transaction] {
+        let grossJobIDs = Set(transactions.filter { $0.isIncome && $0.incomeKind == "gross" }.compactMap(\.jobID))
+        let from = Calendar.current.date(byAdding: .day, value: -3, to: grossEntry.date) ?? grossEntry.date
+        return transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.date >= from && !($0.jobID.map(grossJobIDs.contains) ?? false) }
+    }
+
     var body: some View { NavigationStack { Form {
         Section("Intervention") { LabeledContent("Job", value: grossEntry.title); LabeledContent("Gross received", value: grossEntry.amount.money) }
-        Section("Actual personal transfer") { TextField("Net amount", text: $amount).keyboardType(.decimalPad); DatePicker("Transfer date", selection: $date, displayedComponents: .date) }
-        Section { Button("Record Net transfer") {
-            guard let value = Double(moneyInput: amount) else { return }
+        if !unlinkedTransfers.isEmpty {
+            Section {
+                Picker("Transfer", selection: $existingID) {
+                    Text("Record a new transfer").tag(UUID?.none)
+                    ForEach(unlinkedTransfers) { tx in Text("\(tx.title) · \(tx.amount.moneyExact) · \(tx.date.formatted(date: .abbreviated, time: .omitted))").tag(Optional(tx.id)) }
+                }
+            } header: { Text("Already recorded?") } footer: { Text("Link a transfer you already imported so it isn’t counted twice.") }
+        }
+        if existing == nil {
+            Section("Actual personal transfer") { TextField("Net amount", text: $amount).keyboardType(.decimalPad); DatePicker("Transfer date", selection: $date, displayedComponents: .date) }
+        }
+        Section { Button(existing == nil ? "Record Net transfer" : "Link transfer") {
             if grossEntry.jobID == nil { grossEntry.jobID = UUID() }
+            if let existing { existing.jobID = grossEntry.jobID; try? context.save(); dismiss(); return }
+            guard let value = Double(moneyInput: amount) else { return }
             context.insert(Transaction(title: grossEntry.title, amount: value, date: date, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: grossEntry.jobID)); try? context.save(); dismiss()
-        }.frame(maxWidth: .infinity).bold().disabled(Double(moneyInput: amount) == nil) }
+        }.frame(maxWidth: .infinity).bold().disabled(existing == nil && Double(moneyInput: amount) == nil) }
     }.navigationTitle("Record Net").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 }
 

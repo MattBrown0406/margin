@@ -52,7 +52,13 @@ enum Affordability {
                                         newDailyAllowance: nil, fitsInMonth: fitsLater, suggestedMonthlySetAside: nil)
         }
 
-        let running = target?.cumulative ?? 0
+        // The purchase lowers the running total of its month and every month after it, so it must leave each of
+        // them covered — up to the first month that is already short without it (that shortfall is separate).
+        var running = target?.cumulative ?? 0
+        for later in forecast where later.monthStart > (target?.monthStart ?? month) {
+            if later.isRunningShort { break }
+            running = min(running, later.cumulative)
+        }
         if running >= amount {
             return AffordabilityVerdict(level: running >= amount * 1.5 ? .comfortable : .tight,
                                         headline: "Yes, if booked work pays as expected.",
