@@ -127,7 +127,9 @@ import SwiftData
     /// Open bookings that should still count as expected income: payments already recorded some other way
     /// (Add, a bank import) are matched and excluded so they aren't counted twice.
     static func expectedIncome(_ jobs: [BookedJob], entries: [LedgerEntry]) -> [BookedJobInfo] {
-        CashFlowForecast.unpaid(jobs.filter(\.isOpen).map(\.info), entries: entries, claimed: Set(jobs.compactMap(\.paidJobID)))
+        CashFlowForecast.expectedNet(open: jobs.filter(\.isOpen).map(\.info),
+                                     paid: jobs.filter { $0.status == "paid" }.compactMap { job in job.paidJobID.map { (job.info, $0) } },
+                                     entries: entries)
     }
 }
 

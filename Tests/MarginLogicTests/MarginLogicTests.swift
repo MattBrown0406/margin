@@ -145,6 +145,42 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(months[0].expectedNet == 0)   // A is past the grace period; B is paid
     }
 
+    @Test func aSameTitleBookingBeatsAnAmountOnlyMatch() {
+        let smith = BookedJobInfo(id: UUID(), title: "Smith", expectedDate: day(2026, 9, 28), expectedGross: 5000, expectedNet: 3000, bookedAt: day(2026, 9, 1))
+        let jones = BookedJobInfo(id: UUID(), title: "Jones", expectedDate: day(2026, 11, 3), expectedGross: 5100, expectedNet: 3060, bookedAt: day(2026, 9, 1))
+        let pay = UUID(), entries = [gross(5100, day(2026, 10, 5), job: pay, title: "Jones")]
+        let matches = CashFlowForecast.likelyPayments(for: [smith, jones], entries: entries, claimed: [], calendar: calendar)
+        #expect(matches[jones.id]?.jobID == pay)
+        #expect(matches[smith.id] == nil)
+    }
+
+    @Test func aTrackedJobsOwnTransferNeverClosesTheNextBooking() {
+        // October's Gross is recorded; its transfer was imported "Not linked". November's booking stays expected.
+        let oct = BookedJobInfo(id: UUID(), title: "Bend", expectedDate: day(2026, 10, 1), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 9, 1))
+        let nov = BookedJobInfo(id: UUID(), title: "Bend", expectedDate: day(2026, 11, 1), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 9, 1))
+        let entries = [gross(7500, day(2026, 10, 1), job: UUID(), title: "Bend"), net(4500, day(2026, 10, 3), job: UUID())]
+        let matches = CashFlowForecast.likelyPayments(for: [oct, nov], entries: entries, claimed: [], calendar: calendar)
+        #expect(matches[oct.id]?.isGross == true)
+        #expect(matches[nov.id] == nil)
+        let paidOct = UUID()
+        let afterConfirm = [gross(7500, day(2026, 10, 1), job: paidOct, title: "Bend"), net(4500, day(2026, 10, 3), job: UUID())]
+        #expect(CashFlowForecast.likelyPayments(for: [nov], entries: afterConfirm, claimed: [paidOct], calendar: calendar).isEmpty)
+    }
+
+    @Test func netStaysExpectedUntilTheTransferAfterTheGrossArrives() {
+        let bend = BookedJobInfo(id: UUID(), title: "Bend", expectedDate: day(2026, 10, 10), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 9, 1))
+        let job = UUID()
+        let grossOnly = [gross(7500, day(2026, 10, 3), job: job, title: "Bend")]
+        let open = CashFlowForecast.months(entries: grossOnly, booked: CashFlowForecast.expectedNet(open: [bend], paid: [], entries: grossOnly, calendar: calendar),
+                                           plannedMonthly: 4500, now: now, count: 1, calendar: calendar)
+        #expect(open[0].gap == 0)                               // Gross in, Net still expected
+        // The same once confirmed paid ("That's it"), until the linked transfer is recorded.
+        #expect(CashFlowForecast.expectedNet(open: [], paid: [(bend, job)], entries: grossOnly, calendar: calendar).count == 1)
+        let transferred = grossOnly + [net(4500, day(2026, 10, 4), job: job)]
+        #expect(CashFlowForecast.expectedNet(open: [], paid: [(bend, job)], entries: transferred, calendar: calendar).isEmpty)
+        #expect(CashFlowForecast.expectedNet(open: [bend], paid: [], entries: transferred, calendar: calendar).isEmpty)
+    }
+
     @Test func anUnlinkedNetTransferCanCloseABooking() {
         // Only the personal account is connected: the $4,500 owner transfer arrives without a recorded Gross.
         let transfer = net(4500, day(2026, 10, 18), job: UUID())

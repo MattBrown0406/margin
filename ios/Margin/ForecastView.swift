@@ -45,7 +45,9 @@ struct ForecastView: View {
                         VStack(alignment: .trailing, spacing: 3) { Text(job.expectedGross.money).bold(); Text("≈ \(job.expectedNet.money) Net").font(.caption).foregroundStyle(.secondary) }
                     }
                     if let payment = likely[job.id] {
-                        Label("Looks paid: \(payment.amount.money) on \(payment.date.formatted(date: .abbreviated, time: .omitted)) (“\(payment.title)”). It no longer counts as expected.", systemImage: "checkmark.circle")
+                        Label(payment.isGross
+                              ? "Looks paid: \(payment.amount.money) Gross on \(payment.date.formatted(date: .abbreviated, time: .omitted)) (“\(payment.title)”). Its Net still counts as expected until you record the transfer."
+                              : "Looks paid: \(payment.amount.money) Net on \(payment.date.formatted(date: .abbreviated, time: .omitted)) (“\(payment.title)”). It no longer counts as expected.", systemImage: "checkmark.circle")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     HStack {
@@ -69,13 +71,18 @@ struct ForecastView: View {
 }
 
 extension ForecastView {
-    /// Recorded Gross receipts near a booking's date that no other booking has claimed, so Mark paid can link
-    /// one instead of recording the same payment twice.
+    /// Recorded payments near a booking's date that no other booking has claimed, so Mark paid can link one
+    /// instead of recording the same payment twice: Gross receipts, and Net transfers with no recorded Gross
+    /// (for people who only track their personal account).
     func recordedPayments(near job: BookedJob) -> [Transaction] {
         let claimed = Set(bookedJobs.compactMap(\.paidJobID))
+        let grossJobIDs = Set(transactions.filter { $0.isIncome && $0.incomeKind == "gross" }.compactMap(\.jobID))
         let from = Calendar.current.date(byAdding: .day, value: -60, to: job.expectedDate) ?? .distantPast
         let to = Calendar.current.date(byAdding: .day, value: 60, to: job.expectedDate) ?? .distantFuture
-        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.jobID.map { !claimed.contains($0) } == true && $0.date >= from && $0.date <= to }
+        return transactions.filter { tx in
+            guard tx.isIncome, let id = tx.jobID, !claimed.contains(id), tx.date >= from, tx.date <= to else { return false }
+            return tx.incomeKind == "gross" || (tx.incomeKind == "net" && !grossJobIDs.contains(id))
+        }
             .sorted { abs($0.date.timeIntervalSince(job.expectedDate)) < abs($1.date.timeIntervalSince(job.expectedDate)) }
     }
 }
@@ -164,7 +171,7 @@ struct MarkJobPaidView: View {
             Section {
                 Picker("Payment", selection: $existingJobID) {
                     Text("Record a new payment").tag(UUID?.none)
-                    ForEach(recordedPayments) { tx in Text("\(tx.title) · \(tx.amount.money) · \(tx.date.formatted(date: .abbreviated, time: .omitted))").tag(tx.jobID) }
+                    ForEach(recordedPayments) { tx in Text("\(tx.incomeKind == "net" ? "Net" : "Gross") · \(tx.title) · \(tx.amount.money) · \(tx.date.formatted(date: .abbreviated, time: .omitted))").tag(tx.jobID) }
                 }
             } header: { Text("Already recorded?") } footer: { Text("If this payment came in through Add or a bank import, link it so it isn’t counted twice.") }
         }

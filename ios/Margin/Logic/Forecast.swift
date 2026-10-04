@@ -70,19 +70,23 @@ enum CashFlowForecast {
         let grossJobIDs = Set(entries.filter(\.isGross).compactMap(\.jobID))
         let close: (Double, Double) -> Bool = { actual, expected in expected > 0 && abs(actual - expected) <= expected * 0.05 }
         // Every plausible (booking, payment) pair…
-        var pairs: [(job: BookedJobInfo, entry: LedgerEntry, rank: (Int, TimeInterval))] = []
+        var pairs: [(job: BookedJobInfo, entry: LedgerEntry, rank: (Int, Int, TimeInterval))] = []
         for job in booked {
             guard let windowStart = calendar.date(byAdding: .day, value: -30, to: job.expectedDate),
                   // A booking keeps counting for `overdueGraceDays`, so a payment that late must still match it.
                   let to = calendar.date(byAdding: .day, value: max(45, overdueGraceDays), to: job.expectedDate) else { continue }
             let from = max(windowStart, calendar.date(byAdding: .day, value: -3, to: job.bookedAt) ?? .distantPast)
+            // Unlinked Nets stand in for the payment only for someone who isn't recording Gross receipts around
+            // this time (within 90 days of the booking); otherwise a previous job's own transfer would close the
+            // next booking. Those Nets can still be linked by hand in Mark paid.
+            let tracksGross = entries.contains { $0.isGross && abs($0.date.timeIntervalSince(job.expectedDate)) <= 90 * 86_400 }
             for entry in entries {
                 guard let id = entry.jobID, !claimed.contains(id), !job.ignoredPaymentIDs.contains(id), entry.date >= from, entry.date <= to else { continue }
                 let sameTitle = !job.title.isEmpty && normalize(entry.title) == normalize(job.title)
                 let plausible = entry.isGross ? (sameTitle || close(entry.amount, job.expectedGross))
-                    : entry.isNet && !grossJobIDs.contains(id) && (sameTitle || close(entry.amount, job.expectedNet))
-                // Prefer a Gross receipt, then the payment closest to the booking's expected date.
-                if plausible { pairs.append((job, entry, (entry.isGross ? 0 : 1, abs(entry.date.timeIntervalSince(job.expectedDate))))) }
+                    : entry.isNet && !tracksGross && !grossJobIDs.contains(id) && (sameTitle || close(entry.amount, job.expectedNet))
+                // Prefer a Gross receipt, then a matching title over an amount-only match, then the closest date.
+                if plausible { pairs.append((job, entry, (entry.isGross ? 0 : 1, sameTitle ? 0 : 1, abs(entry.date.timeIntervalSince(job.expectedDate))))) }
             }
         }
         // …assigned closest-first across all bookings, so a stale unpaid booking can't take a newer job's payment.
@@ -92,6 +96,19 @@ enum CashFlowForecast {
             matches[pair.job.id] = pair.entry; taken.insert(id)
         }
         return matches
+    }
+
+    /// Bookings whose Net should still count as expected income:
+    /// - open bookings with no likely recorded payment;
+    /// - bookings whose Gross has arrived (matched, or linked when marked paid) but whose Net transfer hasn't been
+    ///   recorded yet — the money is in the business account, not yet in the personal one.
+    static func expectedNet(open: [BookedJobInfo], paid: [(booking: BookedJobInfo, jobID: UUID)], entries: [LedgerEntry], calendar: Calendar = .current) -> [BookedJobInfo] {
+        let claimed = Set(paid.map(\.jobID))
+        let matches = likelyPayments(for: open, entries: entries, claimed: claimed, calendar: calendar)
+        let grossJobIDs = Set(entries.filter(\.isGross).compactMap(\.jobID)), netJobIDs = Set(entries.filter(\.isNet).compactMap(\.jobID))
+        let awaitingTransfer: (UUID) -> Bool = { grossJobIDs.contains($0) && !netJobIDs.contains($0) }
+        return open.filter { job in matches[job.id].map { $0.isGross && $0.jobID.map(awaitingTransfer) == true } ?? true }
+            + paid.filter { awaitingTransfer($0.jobID) }.map(\.booking)
     }
 
     /// Open bookings that should still count as expected income: those with no likely recorded payment.
