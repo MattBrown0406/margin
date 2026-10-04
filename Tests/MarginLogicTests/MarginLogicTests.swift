@@ -317,6 +317,32 @@ private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "
         #expect(m[0].receivedNet + m[0].expectedNet == 6000)   // truth: 1000 in + 5000 still to transfer
     }
 
+    // Round 7: the estimate is rarely exact; a transfer close to it finishes the job, a small first one doesn't.
+    @Test func aTransferNearTheEstimateFinishesTheJobButAnInstalmentDoesNot() {
+        let booking = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 12), expectedGross: 10000, expectedNet: 6000, bookedAt: day(2026, 9, 1))
+        let job = UUID()
+        let nearEstimate = [acmeGross(10000, day(2026, 10, 10), job), acmeNet(5000, day(2026, 10, 15), job)]
+        #expect(CashFlowForecast.expectedNet(open: [], paid: [(booking, job)], entries: nearEstimate, calendar: calendar).isEmpty)
+        let instalment = [acmeGross(10000, day(2026, 10, 10), job), acmeNet(1000, day(2026, 10, 15), job)]
+        #expect(CashFlowForecast.expectedNet(open: [], paid: [(booking, job)], entries: instalment, calendar: calendar).first?.expectedNet == 5000)
+    }
+
+    @Test func aSettledBookingsPaymentNeverMatchesAnotherBooking() {
+        let settledPayment = UUID()
+        let next = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 20), expectedGross: 10000, expectedNet: 6000, bookedAt: day(2026, 10, 1))
+        let entries = [acmeGross(10000, day(2026, 10, 18), settledPayment)]
+        #expect(CashFlowForecast.expectedNet(open: [next], paid: [], entries: entries, alsoClaimed: [settledPayment], calendar: calendar).first?.expectedNet == 6000)
+    }
+
+    @Test func aConfirmedNetOnlyPaymentIsNeverReusedAsAnotherJobsTransfer() {
+        // Booking A was confirmed paid by linking a Net with no Gross; booking B's Gross arrived and awaits its Net.
+        let a = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 5), expectedGross: 10000, expectedNet: 6000, bookedAt: day(2026, 9, 1))
+        let b = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 8), expectedGross: 10000, expectedNet: 6000, bookedAt: day(2026, 9, 1))
+        let aPayment = UUID(), bJob = UUID()
+        let entries = [acmeNet(6000, day(2026, 10, 9), aPayment), acmeGross(10000, day(2026, 10, 8), bJob)]
+        #expect(CashFlowForecast.expectedNet(open: [], paid: [(a, aPayment), (b, bJob)], entries: entries, calendar: calendar).first?.expectedNet == 6000)
+    }
+
     // 2. Gross tracker imports the Net transfer unlinked (BankSync default "Not linked").
     @Test func unlinkedNetAfterMatchedGrossDoubleCounts() {
         let booking = BookedJobInfo(id: UUID(), title: "Acme", expectedDate: day(2026, 10, 12), expectedGross: 10000, expectedNet: 6000, bookedAt: day(2026, 9, 1))

@@ -108,7 +108,7 @@ import SwiftData
     var expectedGross: Double = 0
     var expectedNet: Double = 0
     var expectedDate: Date = Date.now
-    /// `booked`, `paid`, or `cancelled`.
+    /// `booked`, `paid` (Gross or Net recorded), `settled` (paid and done transferring), or `cancelled`.
     var status: String = "booked"
     /// The jobID of the Gross receipt recorded when it paid.
     var paidJobID: UUID?
@@ -129,7 +129,7 @@ import SwiftData
     static func expectedIncome(_ jobs: [BookedJob], entries: [LedgerEntry]) -> [BookedJobInfo] {
         CashFlowForecast.expectedNet(open: jobs.filter(\.isOpen).map(\.info),
                                      paid: jobs.filter { $0.status == "paid" }.compactMap { job in job.paidJobID.map { (job.info, $0) } },
-                                     entries: entries)
+                                     entries: entries, alsoClaimed: Set(jobs.compactMap(\.paidJobID)))
     }
 }
 

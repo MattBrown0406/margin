@@ -21,13 +21,29 @@ struct ForecastView: View {
                                 plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: .now)
     }
 
+    /// Paid jobs whose Net transfers so far fall short, with what's still expected — shown so it's never invisible.
+    private var awaitingTransfers: [(job: BookedJob, remaining: Double)] {
+        let expected = Dictionary(BookedJob.expectedIncome(bookedJobs, entries: entries).map { ($0.id, $0.expectedNet) }, uniquingKeysWith: { a, _ in a })
+        return bookedJobs.filter { $0.status == "paid" }.compactMap { job in expected[job.id].map { (job, $0) } }.sorted { $0.job.expectedDate < $1.job.expectedDate }
+    }
+
     var body: some View {
-        let months = months, likely = likelyPayments
+        let months = months, likely = likelyPayments, awaiting = awaitingTransfers
         VStack(alignment: .leading, spacing: 14) {
             Text("Booked work, projected forward. Net expected from each booked job counts in the month it should pay.").font(.subheadline).foregroundStyle(.secondary)
             ForecastHeadline(months: months)
             VStack(spacing: 0) { ForEach(months) { ForecastMonthRow(month: $0); if $0.id != months.last?.id { Divider() } } }.marginCard()
 
+            if !awaiting.isEmpty {
+                Text("Waiting on transfers").font(.title3.bold())
+                ForEach(awaiting, id: \.job.id) { item in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack { Text(item.job.title).font(.headline); Spacer(); Text("\(item.remaining.money) Net still expected").font(.subheadline.bold()) }
+                        Text("Counted as coming to your personal account. Done moving money for this job? Tell Margin so the forecast stops expecting it.").font(.caption).foregroundStyle(.secondary)
+                        Button("Done transferring") { item.job.status = "settled"; try? context.save() }.buttonStyle(.bordered).tint(.marginInk)
+                    }.marginCard()
+                }
+            }
             HStack { Text("Booked jobs").font(.title3.bold()); Spacer(); Button { booking = true } label: { Label("Book a job", systemImage: "plus") }.font(.subheadline.bold()).tint(.marginInk) }
             if openJobs.isEmpty {
                 ContentUnavailableView("Nothing booked", systemImage: "calendar.badge.plus", description: Text("Add interventions you’ve booked so Margin can show which months are covered."))

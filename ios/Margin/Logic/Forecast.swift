@@ -105,8 +105,13 @@ enum CashFlowForecast {
     /// - bookings whose Gross has arrived (matched, or linked when marked paid) whose transfers so far fall short of
     ///   the expected Net — Net is often moved in instalments. An unlinked Net transfer (no recorded Gross of its own)
     ///   dated from the Gross to 30 days after it, within 5% of what's outstanding, counts as that job's transfer.
-    static func expectedNet(open: [BookedJobInfo], paid: [(booking: BookedJobInfo, jobID: UUID)], entries: [LedgerEntry], calendar: Calendar = .current) -> [BookedJobInfo] {
-        let claimed = Set(paid.map(\.jobID))
+    ///   Expected Net is only an estimate, so once transfers reach `transferDoneShare` of it the job is done; below
+    ///   that the rest stays expected until the person says they're done transferring.
+    static let transferDoneShare = 0.75
+
+    /// `alsoClaimed`: payments of bookings already settled, which must never match another booking.
+    static func expectedNet(open: [BookedJobInfo], paid: [(booking: BookedJobInfo, jobID: UUID)], entries: [LedgerEntry], alsoClaimed: Set<UUID> = [], calendar: Calendar = .current) -> [BookedJobInfo] {
+        let claimed = Set(paid.map(\.jobID)).union(alsoClaimed)
         let matches = likelyPayments(for: open, entries: entries, claimed: claimed, calendar: calendar)
         let grossByJob = Dictionary(entries.filter(\.isGross).compactMap { e in e.jobID.map { ($0, e) } }, uniquingKeysWith: { a, _ in a })
         let usedByMatching = Set(matches.values.compactMap(\.jobID))
@@ -117,12 +122,12 @@ enum CashFlowForecast {
             var remaining = booking.expectedNet - linked
             if remaining > 0.005, let windowEnd = calendar.date(byAdding: .day, value: 30, to: receipt.date),
                let transfer = entries.first(where: { e in
-                   guard e.isNet, let id = e.jobID, grossByJob[id] == nil, !usedByMatching.contains(id), !usedUnlinked.contains(id) else { return false }
+                   guard e.isNet, let id = e.jobID, grossByJob[id] == nil, !claimed.contains(id), !usedByMatching.contains(id), !usedUnlinked.contains(id) else { return false }
                    return e.date >= calendar.startOfDay(for: receipt.date) && e.date <= windowEnd && abs(e.amount - remaining) <= remaining * 0.05
                }), let id = transfer.jobID {
                 usedUnlinked.insert(id); remaining -= transfer.amount
             }
-            guard remaining > 0.005 else { return nil }
+            guard remaining > 0.005, booking.expectedNet - remaining < booking.expectedNet * transferDoneShare else { return nil }
             var result = booking; result.expectedNet = remaining
             return result
         }
