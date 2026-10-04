@@ -54,26 +54,11 @@ struct RootView: View {
         // Only a starter budget is seeded, never sample transactions: with iCloud sync, fake entries
         // from a new device would land in the real ledger on every other device.
         guard !seeded, categories.isEmpty else { seeded = true; try? context.save(); removeSyncDuplicates(); return }
-        let targetDate = Calendar.current.date(byAdding: .month, value: 8, to: .now)
-        let seedCategories = [
-            BudgetCategory(name: "Giving", icon: "heart", monthlyLimit: 300, colorHex: "72BFA0", isFlexible: false, groupName: "Giving"),
-            BudgetCategory(name: "Peace Number", icon: "shield.fill", monthlyLimit: 1050, colorHex: "72BFA0", isFlexible: false, groupName: "Saving & Funds", isFund: true, fundTarget: 25000, fundTargetDate: targetDate),
-            BudgetCategory(name: "Car repairs", icon: "wrench.fill", monthlyLimit: 150, colorHex: "5F8FA3", isFlexible: false, groupName: "Saving & Funds", isFund: true, fundTarget: 1800, fundTargetDate: Calendar.current.date(byAdding: .month, value: 10, to: .now)),
-            BudgetCategory(name: "Mortgage", icon: "house.fill", monthlyLimit: 2650, colorHex: "264653", isFlexible: false, groupName: "Housing", dueDay: 3),
-            BudgetCategory(name: "Utilities", icon: "bolt.fill", monthlyLimit: 450, colorHex: "264653", isFlexible: false, groupName: "Housing", dueDay: 12),
-            BudgetCategory(name: "Groceries", icon: "cart.fill", monthlyLimit: 700, colorHex: "E9C46A", groupName: "Food"),
-            BudgetCategory(name: "Dining out", icon: "fork.knife", monthlyLimit: 200, colorHex: "E9C46A", groupName: "Food"),
-            BudgetCategory(name: "Fuel", icon: "fuelpump.fill", monthlyLimit: 300, colorHex: "2A9D8F", groupName: "Transportation"),
-            BudgetCategory(name: "Car insurance", icon: "car.fill", monthlyLimit: 250, colorHex: "2A9D8F", isFlexible: false, groupName: "Transportation", dueDay: 18),
-            BudgetCategory(name: "Personal", icon: "person.fill", monthlyLimit: 350, colorHex: "F4A261", groupName: "Personal & Life"),
-            BudgetCategory(name: "Fun money", icon: "sparkles", monthlyLimit: 300, colorHex: "E76F51", groupName: "Personal & Life"),
-            BudgetCategory(name: "Health", icon: "cross.case.fill", monthlyLimit: 450, colorHex: "6D597A", isFlexible: false, groupName: "Personal & Life"),
-            BudgetCategory(name: "Tax reserve", icon: "percent", monthlyLimit: 850, colorHex: "6D597A", isFlexible: false, groupName: "Taxes", dueDay: 25)
-        ]
-        seedCategories.forEach(context.insert)
-        context.insert(SavingsGoal(name: "Peace Number", target: 25000, saved: 0, targetDate: Calendar.current.date(byAdding: .month, value: 12, to: .now) ?? .now, icon: "shield.fill"))
-        seeded = true; ledgerV2Migrated = true
-        try? context.save()
+        // With iCloud on, a fresh install waits for the person's existing budget to sync down instead of
+        // seeding a second copy (which de-duplication would later have to discard). Plan offers the
+        // starter budget for someone who really is starting fresh.
+        if MarginStore.isUsingCloudKit, FileManager.default.ubiquityIdentityToken != nil { try? context.save(); return }
+        StarterBudget.insert(into: context)
     }
 
     /// Keeps one record per name, choosing the oldest (ties broken by id) so every device keeps the same one.
@@ -99,8 +84,9 @@ struct TodayView: View {
     private var monthExpenses: Double { personalExpenses.reduce(0) { $0 + $1.amount } }
     private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: .now) }
     private var shortfall: ForecastMonth? {
-        CashFlowForecast.firstShortfall(CashFlowForecast.months(entries: transactions.map(\.ledgerEntry), booked: bookedJobs.filter(\.isOpen).map(\.info),
-                                                                plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: .now, count: 3))
+        let entries = transactions.map(\.ledgerEntry)
+        return CashFlowForecast.firstShortfall(CashFlowForecast.months(entries: entries, booked: BookedJob.expectedIncome(bookedJobs, entries: entries),
+                                                                       plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: .now, count: 3))
     }
     private var greeting: String {
         switch Calendar.current.component(.hour, from: .now) { case 5..<12: "Good morning"; case 12..<17: "Good afternoon"; default: "Good evening" }
@@ -138,7 +124,7 @@ struct TodayView: View {
                 if let shortfall {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.marginCoral)
-                        Text("\(shortfall.monthStart.formatted(.dateTime.month(.wide))) is \((-shortfall.gap).money) short unless more work books for it.").font(.subheadline.bold())
+                        Text("\(shortfall.monthStart.formatted(.dateTime.month(.wide))) runs \((-shortfall.cumulative).money) short unless more work books for it.").font(.subheadline.bold())
                     }.frame(maxWidth: .infinity, alignment: .leading).marginCard()
                 }
                 VStack(alignment: .leading, spacing: 12) {
@@ -154,7 +140,8 @@ struct TodayView: View {
                     }.marginCard()
                 }.buttonStyle(.plain)
                 HStack { Text("Recent activity").font(.title3.bold()); Spacer(); NavigationLink("See all") { ActivityView(transactions: transactions) }.font(.subheadline.bold()) }
-                if transactions.isEmpty { Text("Nothing recorded yet. Tap Add when you spend or when a job pays.").font(.subheadline).foregroundStyle(.secondary) }
+                if categories.isEmpty { Text("Your budget isn’t set up yet. It arrives from iCloud if you use Margin elsewhere, or start one in Plan.").font(.subheadline).foregroundStyle(.secondary) }
+                else if transactions.isEmpty { Text("Nothing recorded yet. Tap Add when you spend or when a job pays.").font(.subheadline).foregroundStyle(.secondary) }
                 ForEach(transactions.prefix(4)) { TransactionRow(tx: $0) }
                 if let goal = goals.first {
                     NavigationLink { GoalsView(goals: goals) } label: {
@@ -173,6 +160,7 @@ struct TodayView: View {
 }
 
 struct PlanView: View {
+    @Environment(\.modelContext) private var context
     let transactions: [Transaction]
     let categories: [BudgetCategory]
     let bookedJobs: [BookedJob]
@@ -198,6 +186,13 @@ struct PlanView: View {
     private var budgetSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Only Net actually transferred into your personal account funds this plan.").font(.subheadline).foregroundStyle(.secondary)
+            if categories.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("No budget yet", systemImage: "icloud.and.arrow.down").font(.headline)
+                    Text("If you use Margin on another device, your budget appears here once iCloud finishes syncing. Starting fresh? Begin with the starter budget and adjust any line.").font(.subheadline).foregroundStyle(.secondary)
+                    Button("Use the starter budget") { StarterBudget.insert(into: context) }.buttonStyle(.borderedProminent).tint(.marginInk)
+                }.marginCard()
+            }
             HStack(spacing: 10) {
                 PlanSummary(label: "NET INCOME", value: netIncome, dark: true)
                 PlanSummary(label: "PLANNED", value: planned, dark: false)

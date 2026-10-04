@@ -72,6 +72,8 @@ The app now uses capabilities that need a paid Apple Developer team. In Xcode, s
 | Sign in with Apple | — | Signing in to the bank service and Ask Margin |
 | Background Modes › Remote notifications | — | CloudKit sync pushes |
 
+Before a TestFlight or App Store build, open the CloudKit Console and **deploy the schema from Development to Production**; otherwise production sync fails silently. Run the app once in Development after any model change so the schema is up to date.
+
 If you change the bundle prefix, update `ios/Margin/Margin.entitlements`, `ios/MarginWidget/MarginWidget.entitlements`, and `WidgetSnapshot.appGroup`. Without iCloud the app quietly keeps data on the device; sync can also be turned off in Settings.
 
 New installs start with the starter budget only (no sample transactions), because with iCloud sync sample entries would reach every device.

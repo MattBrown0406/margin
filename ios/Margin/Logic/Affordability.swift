@@ -19,16 +19,21 @@ enum Affordability {
         let monthName = month.formatted(.dateTime.month(.wide))
         let monthsAway = calendar.monthsBetween(now, month)
         let target = forecast.first { calendar.isSameMonth($0.monthStart, month) }
-        let fits = forecast.first { $0.monthStart >= calendar.startOfMonth(for: month) && $0.cumulative >= amount }?.monthStart
-        let setAside = amount / Double(max(1, monthsAway + 1))
+        let currentStart = calendar.startOfMonth(for: now)
+        // Earliest month (after this one) whose running total covers the purchase.
+        let fitsLater = forecast.first { $0.monthStart > currentStart && $0.monthStart >= calendar.startOfMonth(for: month) && $0.cumulative >= amount }?.monthStart
 
         if monthsAway <= 0 {
+            // Only personal Net funds the plan. If this month's plan isn't covered yet, flexible money on paper
+            // isn't money in hand, so never call it comfortable.
+            let unfunded = max(0, -(target?.gap ?? 0))
+            let unfundedNote = unfunded > 0 ? ["Your plan is still \(unfunded.money) short of funded this month, so this assumes that Net arrives."] : []
             if amount <= safe.flexibleLeft {
                 let left = safe.flexibleLeft - amount, daily = left / Double(max(1, safe.daysLeft))
-                let comfortable = amount <= safe.flexibleLeft * 0.5
+                let comfortable = amount <= safe.flexibleLeft * 0.5 && unfunded == 0
                 return AffordabilityVerdict(level: comfortable ? .comfortable : .tight,
                                             headline: comfortable ? "Yes, it fits in this month’s flexible money." : "Yes, but it makes the rest of the month tight.",
-                                            details: ["Leaves \(left.money) flexible for the next \(safe.daysLeft) days, about \(daily.money) a day."],
+                                            details: ["Leaves \(left.money) flexible for the next \(safe.daysLeft) days, about \(daily.money) a day."] + unfundedNote,
                                             newDailyAllowance: daily, fitsInMonth: nil, suggestedMonthlySetAside: nil)
             }
             let shortfall = amount - safe.flexibleLeft
@@ -39,20 +44,22 @@ enum Affordability {
                                             newDailyAllowance: 0, fitsInMonth: nil, suggestedMonthlySetAside: nil)
             }
             return AffordabilityVerdict(level: .notYet, headline: "Not this month.",
-                                        details: ["It’s \(shortfall.money) more than your flexible money left."] + (fits.map { ["Booked work covers it by \($0.formatted(.dateTime.month(.wide).year()))."] } ?? []),
-                                        newDailyAllowance: nil, fitsInMonth: fits, suggestedMonthlySetAside: nil)
+                                        details: ["It’s \(shortfall.money) more than your flexible money left."] + (fitsLater.map { ["Booked work covers it by \($0.formatted(.dateTime.month(.wide).year()))."] } ?? []),
+                                        newDailyAllowance: nil, fitsInMonth: fitsLater, suggestedMonthlySetAside: nil)
         }
 
-        let surplus = max(0, target?.cumulative ?? 0)
-        if surplus >= amount {
-            return AffordabilityVerdict(level: surplus >= amount * 1.5 ? .comfortable : .tight,
+        let running = target?.cumulative ?? 0
+        if running >= amount {
+            return AffordabilityVerdict(level: running >= amount * 1.5 ? .comfortable : .tight,
                                         headline: "Yes, if booked work pays as expected.",
-                                        details: ["Booked jobs leave about \(surplus.money) beyond your plan by \(monthName)."],
+                                        details: ["Booked jobs leave about \(running.money) beyond your plan by \(monthName)."],
                                         newDailyAllowance: nil, fitsInMonth: target?.monthStart, suggestedMonthlySetAside: nil)
         }
+        // Cover the purchase and any deficit, spread over the months from now through the purchase month.
+        let setAside = (amount - running) / Double(monthsAway + 1)
+        let position = running < 0 ? "Booked work leaves your plan \((-running).money) short by \(monthName)." : "Booked work leaves \(running.money) beyond your plan by \(monthName)."
         return AffordabilityVerdict(level: .notYet, headline: "Not on what’s booked so far.",
-                                    details: ["Booked work leaves \(surplus.money) beyond your plan by \(monthName)." ,
-                                              "Setting aside \(setAside.money) a month from now would cover it."],
-                                    newDailyAllowance: nil, fitsInMonth: fits, suggestedMonthlySetAside: setAside)
+                                    details: [position, "Setting aside \(setAside.money) a month from now would cover it."],
+                                    newDailyAllowance: nil, fitsInMonth: fitsLater, suggestedMonthlySetAside: setAside)
     }
 }

@@ -43,7 +43,7 @@ struct AffordView: View {
     private var entries: [LedgerEntry] { transactions.map(\.ledgerEntry) }
     private var safe: SafeToSpend { .compute(entries: entries, lines: categories.map(\.planLine), now: now) }
     private var forecast: [ForecastMonth] {
-        CashFlowForecast.months(entries: entries, booked: bookedJobs.filter(\.isOpen).map(\.info), plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: now)
+        CashFlowForecast.months(entries: entries, booked: BookedJob.expectedIncome(bookedJobs, entries: entries), plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: now)
     }
     private var verdict: AffordabilityVerdict? {
         Double(moneyInput: amount).map { Affordability.evaluate(amount: $0, in: targetMonth, now: now, safe: safe, forecast: forecast) }
@@ -85,6 +85,7 @@ struct AffordView: View {
     private func ask(_ verdict: AffordabilityVerdict) async {
         guard let api = MarginAPI.signedIn(), let value = Double(moneyInput: amount) else { return }
         asking = true; askError = nil; defer { asking = false }
+        let askedAmount = amount, askedMonth = monthOffset
         let description = String(what.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
         let monthLabel = monthOffset == 0 ? "this month" : targetMonth.formatted(.dateTime.month(.wide).year())
         let question = "Can I afford \(description.isEmpty ? "this" : description) for \(value.moneyExact) \(monthOffset == 0 ? "this month" : "in \(monthLabel)")?"
@@ -92,8 +93,11 @@ struct AffordView: View {
             let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(context(verdict: verdict, description: description.isEmpty ? "Unnamed purchase" : description, amount: value))
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-            answer = try await api.request("/v1/ask", method: "POST", body: ["question": question, "context": json], as: AskResponse.self).answer
-        } catch { askError = error.localizedDescription }
+            let reply = try await api.request("/v1/ask", method: "POST", body: ["question": question, "context": json], as: AskResponse.self).answer
+            // Ignore a reply for a purchase the person has since changed.
+            guard amount == askedAmount, monthOffset == askedMonth else { return }
+            answer = reply
+        } catch { if amount == askedAmount, monthOffset == askedMonth { askError = error.localizedDescription } }
     }
 
     private func context(verdict: AffordabilityVerdict, description: String, amount: Double) -> AskContext {

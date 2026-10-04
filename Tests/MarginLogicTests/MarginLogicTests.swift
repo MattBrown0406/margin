@@ -21,8 +21,11 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
                       ("1.234,56", "de_DE", 1234.56), ("1.234", "de_DE", 1234), ("12.50", "fr_FR", 12.5), ("1 234,56", "fr_FR", 1234.56)])
     func parses(text: String, locale: String, expected: Double) { #expect(Double(moneyInput: text, locale: Locale(identifier: locale)) == expected) }
 
-    @Test(arguments: ["", "abc", "-5", "0", "0.004", "−3"])
+    @Test(arguments: ["", "abc", "-5", "0", "0.004", "−3", "Invoice #1042 $750.00", "3 for $10", "1e3", "50¢", "1 2", "1.234,5.6"])
     func rejects(text: String) { #expect(Double(moneyInput: text, locale: Locale(identifier: "en_US")) == nil) }
+
+    @Test(arguments: [("USD 40", 40.0), (".50", 0.5), ("1'234.50", 1234.5), ("$ 1,234,567", 1234567), ("€12", 12)])
+    func acceptsCurrencyDecorations(text: String, expected: Double) { #expect(Double(moneyInput: text, locale: Locale(identifier: "en_US")) == expected) }
 }
 
 @Suite struct SafeToSpendTests {
@@ -36,6 +39,13 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(safe.dailyAllowance == 50)      // (900 - 400) / 10
         #expect(safe.safeToday == 20)           // 50 - 30
         #expect(safe.flexibleLeft == 470)
+    }
+
+    @Test func aRefundTodayNeverShowsMoreThanIsLeft() {
+        // $1,000 spent of a $900 limit, then a $200 refund today: $100 left, so safe today can't be $200.
+        let safe = SafeToSpend.compute(entries: [spend(1000, "Groceries", day(2026, 9, 5)), spend(-200, "Groceries", now)], lines: lines, now: now, calendar: calendar)
+        #expect(safe.flexibleLeft == 100)
+        #expect(safe.safeToday == 100)
     }
 
     @Test func businessSpendingNeverCounts() {
@@ -70,6 +80,36 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(months[2].gap == -4000)
         #expect(months[2].cumulative == -2000)
         #expect(CashFlowForecast.firstShortfall(months)?.monthStart == day(2026, 12, 1, 0))
+    }
+
+    @Test func longOverdueBookingsStopCounting() {
+        let stale = BookedJobInfo(id: UUID(), title: "April", expectedDate: day(2026, 4, 10), expectedGross: 7000, expectedNet: 4500)
+        let recent = BookedJobInfo(id: UUID(), title: "Sept", expectedDate: day(2026, 9, 15), expectedGross: 5000, expectedNet: 3000)
+        let months = CashFlowForecast.months(entries: [], booked: [stale, recent], plannedMonthly: 0, now: now, count: 1, calendar: calendar)
+        #expect(months[0].overdueJobs.map(\.title) == ["Sept"])
+        #expect(months[0].expectedNet == 3000)
+    }
+
+    @Test func surplusCarriesIntoLaterMonthsBeforeWarningShort() {
+        // October brings in $9,000 against a $4,000 plan; nothing booked for November.
+        let months = CashFlowForecast.months(entries: [net(9000, day(2026, 10, 2))], booked: [], plannedMonthly: 4000, now: now, count: 3, calendar: calendar)
+        #expect(months[1].isShort)                       // November on its own is short…
+        #expect(months[1].cumulative == 1000)            // …but October's surplus covers it.
+        #expect(CashFlowForecast.firstShortfall(months)?.monthStart == day(2026, 12, 1, 0))
+    }
+
+    @Test func recordedPaymentsMatchBookingsOnceAndRespectDismissals() {
+        let paidByBank = UUID(), other = UUID(), claimed = UUID()
+        let bend = BookedJobInfo(id: UUID(), title: "Bend intervention", expectedDate: day(2026, 10, 15), expectedGross: 7500, expectedNet: 4500)
+        let eugene = BookedJobInfo(id: UUID(), title: "Eugene", expectedDate: day(2026, 10, 20), expectedGross: 6000, expectedNet: 3600)
+        let entries = [gross(7400, day(2026, 10, 14), job: paidByBank, title: "BEND INTERVENTION"), gross(6000, day(2026, 10, 21), job: claimed),
+                       gross(6100, day(2026, 12, 30), job: other)]
+        let matches = CashFlowForecast.likelyPayments(for: [bend, eugene], entries: entries, claimed: [claimed], calendar: calendar)
+        #expect(matches[bend.id]?.jobID == paidByBank)
+        #expect(matches[eugene.id] == nil)                // its only candidate is claimed or out of range
+        #expect(CashFlowForecast.unpaid([bend, eugene], entries: entries, claimed: [claimed], calendar: calendar).map(\.title) == ["Eugene"])
+        var dismissed = bend; dismissed.ignoredPaymentIDs = [paidByBank]
+        #expect(CashFlowForecast.likelyPayments(for: [dismissed], entries: entries, claimed: [], calendar: calendar).isEmpty)
     }
 
     @Test func netRateComesFromJobsWithTransfers() {
@@ -126,6 +166,20 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(v.newDailyAllowance == 40)
     }
 
+    @Test func neverComfortableWhileThisMonthsPlanIsUnfunded() {
+        let v = Affordability.evaluate(amount: 100, in: now, now: now, safe: safe, forecast: forecast(received: 0), calendar: calendar)
+        #expect(v.level == .tight)
+        #expect(v.details.contains { $0.contains("short of funded") })
+    }
+
+    @Test func notThisMonthNeverPointsBackAtThisMonth() {
+        let overdue = BookedJobInfo(id: UUID(), title: "Late", expectedDate: day(2026, 9, 25), expectedGross: 5000, expectedNet: 3000)
+        let v = Affordability.evaluate(amount: 700, in: now, now: now, safe: .make(limit: 900, spentBeforeToday: 400, spentToday: 0, now: now, calendar: calendar),
+                                       forecast: forecast(booked: [overdue]), calendar: calendar)
+        #expect(v.level == .notYet)
+        #expect(v.fitsInMonth.map { !calendar.isSameMonth($0, now) } ?? true)
+    }
+
     @Test func purchaseUsingMostOfTheMonthIsTight() {
         #expect(Affordability.evaluate(amount: 450, in: now, now: now, safe: safe, forecast: forecast(), calendar: calendar).level == .tight)
     }
@@ -147,6 +201,7 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(decOnly.level == .notYet)
         let no = Affordability.evaluate(amount: 1200, in: december, now: now, safe: safe, forecast: forecast(), calendar: calendar)
         #expect(no.level == .notYet)
-        #expect(no.suggestedMonthlySetAside == 400)
+        // The plan is $8,000 short by December, so the set-aside covers that deficit plus the purchase.
+        #expect(no.suggestedMonthlySetAside == (1200 + 8000) / 3.0)
     }
 }

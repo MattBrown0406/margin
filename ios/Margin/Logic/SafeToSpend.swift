@@ -22,8 +22,10 @@ struct SafeToSpend: Equatable {
         let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
         let daysLeft = max(1, daysInMonth - calendar.component(.day, from: now) + 1)
         let allowance = max(0, (limit - spentBeforeToday) / Double(daysLeft))
-        return SafeToSpend(safeToday: max(0, allowance - spentToday), dailyAllowance: allowance, spentToday: spentToday,
-                           flexibleLeft: max(0, limit - spentBeforeToday - spentToday), flexibleLimit: limit, daysLeft: daysLeft)
+        let flexibleLeft = max(0, limit - spentBeforeToday - spentToday)
+        // Never more than what's actually left (a refund today can push allowance − spentToday above it).
+        return SafeToSpend(safeToday: min(flexibleLeft, max(0, allowance - spentToday)), dailyAllowance: allowance, spentToday: spentToday,
+                           flexibleLeft: flexibleLeft, flexibleLimit: limit, daysLeft: daysLeft)
     }
 }
 

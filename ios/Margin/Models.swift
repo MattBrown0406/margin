@@ -113,6 +113,8 @@ import SwiftData
     /// The jobID of the Gross receipt recorded when it paid.
     var paidJobID: UUID?
     var createdAt: Date = Date.now
+    /// Recorded payments the person said are not this booking, so they stop being suggested.
+    var ignoredPaymentIDs: [UUID] = []
 
     init(title: String, expectedGross: Double, expectedNet: Double, expectedDate: Date) {
         self.id = UUID(); self.title = title; self.expectedGross = expectedGross; self.expectedNet = expectedNet
@@ -120,7 +122,13 @@ import SwiftData
     }
 
     var isOpen: Bool { status == "booked" }
-    var info: BookedJobInfo { BookedJobInfo(id: id, title: title, expectedDate: expectedDate, expectedGross: expectedGross, expectedNet: expectedNet) }
+    var info: BookedJobInfo { BookedJobInfo(id: id, title: title, expectedDate: expectedDate, expectedGross: expectedGross, expectedNet: expectedNet, ignoredPaymentIDs: Set(ignoredPaymentIDs)) }
+
+    /// Open bookings that should still count as expected income: payments already recorded some other way
+    /// (Add, a bank import) are matched and excluded so they aren't counted twice.
+    static func expectedIncome(_ jobs: [BookedJob], entries: [LedgerEntry]) -> [BookedJobInfo] {
+        CashFlowForecast.unpaid(jobs.filter(\.isOpen).map(\.info), entries: entries, claimed: Set(jobs.compactMap(\.paidJobID)))
+    }
 }
 
 extension Transaction {
@@ -141,5 +149,34 @@ extension Transaction {
     func netTransfers(in transactions: [Transaction]) -> [Transaction] {
         guard incomeKind == "gross", let jobID else { return [] }
         return transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.jobID == jobID }.sorted { $0.date < $1.date }
+    }
+}
+
+/// The budget a new Margin starts with. Only categories and a reserve goal, never sample transactions:
+/// with iCloud sync, sample entries would land in the real ledger on every device.
+enum StarterBudget {
+    static let seededKey = "margin.seeded"
+
+    static func insert(into context: ModelContext) {
+        let targetDate = Calendar.current.date(byAdding: .month, value: 8, to: .now)
+        let seedCategories = [
+            BudgetCategory(name: "Giving", icon: "heart", monthlyLimit: 300, colorHex: "72BFA0", isFlexible: false, groupName: "Giving"),
+            BudgetCategory(name: "Peace Number", icon: "shield.fill", monthlyLimit: 1050, colorHex: "72BFA0", isFlexible: false, groupName: "Saving & Funds", isFund: true, fundTarget: 25000, fundTargetDate: targetDate),
+            BudgetCategory(name: "Car repairs", icon: "wrench.fill", monthlyLimit: 150, colorHex: "5F8FA3", isFlexible: false, groupName: "Saving & Funds", isFund: true, fundTarget: 1800, fundTargetDate: Calendar.current.date(byAdding: .month, value: 10, to: .now)),
+            BudgetCategory(name: "Mortgage", icon: "house.fill", monthlyLimit: 2650, colorHex: "264653", isFlexible: false, groupName: "Housing", dueDay: 3),
+            BudgetCategory(name: "Utilities", icon: "bolt.fill", monthlyLimit: 450, colorHex: "264653", isFlexible: false, groupName: "Housing", dueDay: 12),
+            BudgetCategory(name: "Groceries", icon: "cart.fill", monthlyLimit: 700, colorHex: "E9C46A", groupName: "Food"),
+            BudgetCategory(name: "Dining out", icon: "fork.knife", monthlyLimit: 200, colorHex: "E9C46A", groupName: "Food"),
+            BudgetCategory(name: "Fuel", icon: "fuelpump.fill", monthlyLimit: 300, colorHex: "2A9D8F", groupName: "Transportation"),
+            BudgetCategory(name: "Car insurance", icon: "car.fill", monthlyLimit: 250, colorHex: "2A9D8F", isFlexible: false, groupName: "Transportation", dueDay: 18),
+            BudgetCategory(name: "Personal", icon: "person.fill", monthlyLimit: 350, colorHex: "F4A261", groupName: "Personal & Life"),
+            BudgetCategory(name: "Fun money", icon: "sparkles", monthlyLimit: 300, colorHex: "E76F51", groupName: "Personal & Life"),
+            BudgetCategory(name: "Health", icon: "cross.case.fill", monthlyLimit: 450, colorHex: "6D597A", isFlexible: false, groupName: "Personal & Life"),
+            BudgetCategory(name: "Tax reserve", icon: "percent", monthlyLimit: 850, colorHex: "6D597A", isFlexible: false, groupName: "Taxes", dueDay: 25)
+        ]
+        seedCategories.forEach(context.insert)
+        context.insert(SavingsGoal(name: "Peace Number", target: 25000, saved: 0, targetDate: Calendar.current.date(byAdding: .month, value: 12, to: .now) ?? .now, icon: "shield.fill"))
+        UserDefaults.standard.set(true, forKey: seededKey)
+        try? context.save()
     }
 }

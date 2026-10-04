@@ -7,6 +7,8 @@ struct BookedJobInfo: Equatable, Identifiable {
     var expectedDate: Date
     var expectedGross: Double
     var expectedNet: Double
+    /// Recorded payments (Gross jobIDs) the person said are not this booking.
+    var ignoredPaymentIDs: Set<UUID> = []
 }
 
 /// One month of the cash-flow calendar: personal Net already received plus Net expected from booked
@@ -25,16 +27,22 @@ struct ForecastMonth: Equatable, Identifiable {
 
     var gap: Double { receivedNet + expectedNet - planned }
     var isShort: Bool { gap < -0.005 }
+    /// Short once earlier months' surplus (money already in the personal account) is counted.
+    var isRunningShort: Bool { cumulative < -0.005 }
 }
 
 enum CashFlowForecast {
+    /// An unpaid booking keeps counting (in the current month) for this long after its expected date.
+    static let overdueGraceDays = 60
+
     static func months(entries: [LedgerEntry], booked: [BookedJobInfo], plannedMonthly: Double, now: Date, count: Int = 6, calendar: Calendar = .current) -> [ForecastMonth] {
         let current = calendar.startOfMonth(for: now)
         var running = 0.0
         return (0..<max(1, count)).map { offset in
             let start = calendar.date(byAdding: .month, value: offset, to: current) ?? current
             let inMonth = booked.filter { calendar.isSameMonth($0.expectedDate, start) }
-            let overdue = offset == 0 ? booked.filter { $0.expectedDate < current } : []
+            let graceStart = calendar.date(byAdding: .day, value: -overdueGraceDays, to: now) ?? .distantPast
+            let overdue = offset == 0 ? booked.filter { $0.expectedDate < current && $0.expectedDate >= graceStart } : []
             let jobs = (overdue + inMonth).sorted { $0.expectedDate < $1.expectedDate }
             let received = entries.filter { $0.isNet && calendar.isSameMonth($0.date, start) }.total
             let month = ForecastMonth(monthStart: start, receivedNet: received, expectedNet: jobs.reduce(0) { $0 + $1.expectedNet },
@@ -45,8 +53,37 @@ enum CashFlowForecast {
         }
     }
 
-    /// The first month that booked work doesn't cover.
-    static func firstShortfall(_ months: [ForecastMonth]) -> ForecastMonth? { months.first(where: \.isShort) }
+    /// The first month whose running total goes negative: booked work plus money already received can't cover
+    /// the plan. The shortfall is `-cumulative`.
+    static func firstShortfall(_ months: [ForecastMonth]) -> ForecastMonth? { months.first(where: \.isRunningShort) }
+
+    /// For each open booking, a recorded Gross that is probably its payment (same title, or amount within 5%,
+    /// dated from 30 days before to 45 days after the expected date). Each payment matches at most one booking,
+    /// and payments already linked to a paid booking (`claimed`) or dismissed for this booking never match.
+    static func likelyPayments(for booked: [BookedJobInfo], entries: [LedgerEntry], claimed: Set<UUID>, calendar: Calendar = .current) -> [UUID: LedgerEntry] {
+        var taken = claimed, matches: [UUID: LedgerEntry] = [:]
+        let normalize: (String) -> String = { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        for job in booked.sorted(by: { $0.expectedDate < $1.expectedDate }) {
+            guard let from = calendar.date(byAdding: .day, value: -30, to: job.expectedDate),
+                  let to = calendar.date(byAdding: .day, value: 45, to: job.expectedDate) else { continue }
+            let candidates = entries.filter { entry in
+                guard entry.isGross, let id = entry.jobID, !taken.contains(id), !job.ignoredPaymentIDs.contains(id), entry.date >= from, entry.date <= to else { return false }
+                let sameTitle = !job.title.isEmpty && normalize(entry.title) == normalize(job.title)
+                let closeAmount = job.expectedGross > 0 && abs(entry.amount - job.expectedGross) <= job.expectedGross * 0.05
+                return sameTitle || closeAmount
+            }
+            if let best = candidates.min(by: { abs($0.date.timeIntervalSince(job.expectedDate)) < abs($1.date.timeIntervalSince(job.expectedDate)) }), let id = best.jobID {
+                matches[job.id] = best; taken.insert(id)
+            }
+        }
+        return matches
+    }
+
+    /// Open bookings that should still count as expected income: those with no likely recorded payment.
+    static func unpaid(_ booked: [BookedJobInfo], entries: [LedgerEntry], claimed: Set<UUID>, calendar: Calendar = .current) -> [BookedJobInfo] {
+        let paid = likelyPayments(for: booked, entries: entries, claimed: claimed, calendar: calendar)
+        return booked.filter { paid[$0.id] == nil }
+    }
 
     /// Share of Gross that has historically reached the personal account, from the last 12 months of jobs
     /// that recorded at least one transfer. Used to pre-fill a booked job's expected Net.

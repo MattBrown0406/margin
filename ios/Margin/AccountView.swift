@@ -4,6 +4,7 @@ import CryptoKit
 
 private struct SessionResponse: Decodable { let sessionToken: String; let expiresAt: String; let userId: String }
 private struct DeletedResponse: Decodable { let deleted: Bool }
+private struct SignedOutResponse: Decodable { let signedOut: Bool }
 
 @MainActor final class AccountModel: ObservableObject {
     @Published private(set) var isSignedIn = false
@@ -34,9 +35,12 @@ private struct DeletedResponse: Decodable { let deleted: Bool }
                   let tokenData = credential.identityToken, let identityToken = String(data: tokenData, encoding: .utf8),
                   let nonce, let url = MarginService.baseURL else { message = "Apple didn’t return a usable sign-in. Try again."; return }
             isWorking = true; defer { isWorking = false }
+            // The one-time authorization code lets the service revoke Apple's tokens if the account is deleted.
+            var body: [String: Any] = ["identityToken": identityToken, "nonce": nonce]
+            if let code = credential.authorizationCode.flatMap({ String(data: $0, encoding: .utf8) }) { body["authorizationCode"] = code }
             do {
                 let session = try await MarginAPI(baseURL: url, sessionToken: nil)
-                    .request("/v1/auth/apple", method: "POST", body: ["identityToken": identityToken, "nonce": nonce], as: SessionResponse.self)
+                    .request("/v1/auth/apple", method: "POST", body: body, as: SessionResponse.self)
                 tokens.save(session.sessionToken); tokens.saveAppleUserID(credential.user)
                 message = nil
             } catch { message = error.localizedDescription }
@@ -44,14 +48,19 @@ private struct DeletedResponse: Decodable { let deleted: Bool }
         }
     }
 
-    func signOut() { tokens.delete(); refresh() }
+    /// Ends the session on the service too (best effort), so a copied token stops working.
+    func signOut() async {
+        if let api = MarginAPI.signedIn() { _ = try? await api.request("/v1/session", method: "DELETE", as: SignedOutResponse.self) }
+        clearSession()
+    }
+    private func clearSession() { tokens.delete(); refresh() }
 
     func deleteAccount() async {
-        guard let api = MarginAPI.signedIn() else { signOut(); return }
+        guard let api = MarginAPI.signedIn() else { clearSession(); return }
         isWorking = true; defer { isWorking = false }
         do {
             _ = try await api.request("/v1/account", method: "DELETE", as: DeletedResponse.self)
-            signOut()
+            clearSession()
             message = "Your Margin account and bank connections were deleted. Your budget stays on your devices."
         } catch { message = error.localizedDescription }
     }
@@ -59,7 +68,7 @@ private struct DeletedResponse: Decodable { let deleted: Bool }
     /// Signs out if the person revoked Margin in Settings › Apple ID › Sign in with Apple.
     func checkAppleCredential() async {
         guard let id = tokens.appleUserID() else { return }
-        if let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: id), state == .revoked || state == .notFound { signOut() }
+        if let state = try? await ASAuthorizationAppleIDProvider().credentialState(forUserID: id), state == .revoked || state == .notFound { clearSession() }
     }
 
     private static func randomNonce() -> String {
@@ -85,7 +94,7 @@ struct AccountView: View {
             Section {
                 if account.isSignedIn {
                     Label("Signed in with Apple", systemImage: "person.crop.circle.badge.checkmark")
-                    Button("Sign out") { account.signOut() }
+                    Button("Sign out") { Task { await account.signOut() } }.disabled(account.isWorking)
                     Button("Delete account", role: .destructive) { confirmDelete = true }.disabled(account.isWorking)
                 } else if account.serviceConfigured {
                     SignInWithAppleButton(.signIn) { account.prepare($0) } onCompletion: { result in Task { await account.complete(result) } }

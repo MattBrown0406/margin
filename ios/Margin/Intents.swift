@@ -23,7 +23,9 @@ enum WidgetBridge {
 /// "Log $12 coffee in Margin": records a personal expense without opening the app.
 struct LogExpenseIntent: AppIntent {
     static let title: LocalizedStringResource = "Log an Expense"
-    static let description = IntentDescription("Records a personal expense in Margin and tells you what’s left to spend today.")
+    static let description = IntentDescription("Records an expense in Margin and tells you what’s left to spend today.")
+    /// Writes to the ledger (and iCloud), so it never runs from a locked phone.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Amount") var amount: Double
     @Parameter(title: "What was it?") var merchant: String
@@ -36,20 +38,28 @@ struct LogExpenseIntent: AppIntent {
         let cents = (amount * 100).rounded() / 100
         guard cents > 0, cents.isFinite else { throw $amount.needsValueError("How much was it?") }
         let context = MarginStore.shared.mainContext
-        let chosen = Self.resolveCategory(category, in: try context.fetch(FetchDescriptor<BudgetCategory>()))
+        guard let (chosen, scope) = Self.resolveCategory(category, in: try context.fetch(FetchDescriptor<BudgetCategory>())) else {
+            throw $category.needsValueError("Which category was it?")
+        }
         let name = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
-        context.insert(Transaction(title: name.isEmpty ? chosen : name, amount: cents, category: chosen, ledgerScope: "personal"))
+        context.insert(Transaction(title: name.isEmpty ? chosen : name, amount: cents, category: chosen, ledgerScope: scope))
         try context.save()
         let safe = try WidgetBridge.publish(from: context)
+        if scope == "business" { return .result(dialog: "Logged \(cents.moneyExact) as a business \(chosen) expense.") }
         return .result(dialog: "Logged \(cents.moneyExact) in \(chosen). You can still spend \(safe.safeToday.money) today.")
     }
 
-    /// The spoken category if it matches one (case-insensitive), else "Personal", else the first flexible category.
-    static func resolveCategory(_ spoken: String?, in categories: [BudgetCategory]) -> String {
-        let names = categories.sorted { $0.name < $1.name }
-        if let spoken = spoken?.trimmingCharacters(in: .whitespaces), !spoken.isEmpty,
-           let match = names.first(where: { $0.name.caseInsensitiveCompare(spoken) == .orderedSame }) { return match.name }
-        return names.first { $0.name == "Personal" }?.name ?? names.first(where: \.isFlexible)?.name ?? "Personal"
+    /// The spoken category and its ledger: one of the person's budget categories (personal) or a business
+    /// category, matched case-insensitively. Nothing spoken means "Personal". A spoken category that matches
+    /// nothing returns nil so Siri asks again instead of guessing.
+    static func resolveCategory(_ spoken: String?, in categories: [BudgetCategory]) -> (String, String)? {
+        guard let spoken = spoken?.trimmingCharacters(in: .whitespaces), !spoken.isEmpty else {
+            let names = categories.sorted { $0.name < $1.name }
+            return (names.first { $0.name == "Personal" }?.name ?? names.first(where: \.isFlexible)?.name ?? "Personal", "personal")
+        }
+        if let match = categories.first(where: { $0.name.caseInsensitiveCompare(spoken) == .orderedSame }) { return (match.name, "personal") }
+        if let business = businessCategoryNames.first(where: { $0.caseInsensitiveCompare(spoken) == .orderedSame }) { return (business, "business") }
+        return nil
     }
 }
 
@@ -57,6 +67,8 @@ struct LogExpenseIntent: AppIntent {
 struct SafeToSpendIntent: AppIntent {
     static let title: LocalizedStringResource = "Safe to Spend Today"
     static let description = IntentDescription("Tells you how much you can safely spend today.")
+    /// Speaks budget figures, so require an unlocked phone.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
