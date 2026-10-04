@@ -61,7 +61,7 @@ enum CashFlowForecast {
 
     /// For each open booking, a recorded payment that is probably it: a Gross with the same title or within 5% of
     /// the expected Gross, or (when the business account isn't tracked) a Net transfer not linked to any recorded
-    /// Gross, matched against the expected Net. It must be dated from 30 days before to 45 days after the expected
+    /// Gross, matched against the expected Net. It must be dated from 30 days before to 60 days after the expected
     /// date and no earlier than 3 days before the booking was made, so a previous job's payment never closes a
     /// new booking. Each payment matches at most one booking; payments linked to a paid booking (`claimed`) or
     /// dismissed for this booking never match.
@@ -72,7 +72,8 @@ enum CashFlowForecast {
         let close: (Double, Double) -> Bool = { actual, expected in expected > 0 && abs(actual - expected) <= expected * 0.05 }
         for job in booked.sorted(by: { $0.expectedDate < $1.expectedDate }) {
             guard let windowStart = calendar.date(byAdding: .day, value: -30, to: job.expectedDate),
-                  let to = calendar.date(byAdding: .day, value: 45, to: job.expectedDate) else { continue }
+                  // A booking keeps counting for `overdueGraceDays`, so a payment that late must still match it.
+                  let to = calendar.date(byAdding: .day, value: max(45, overdueGraceDays), to: job.expectedDate) else { continue }
             let from = max(windowStart, calendar.date(byAdding: .day, value: -3, to: job.bookedAt) ?? .distantPast)
             let candidates = entries.filter { entry in
                 guard let id = entry.jobID, !taken.contains(id), !job.ignoredPaymentIDs.contains(id), entry.date >= from, entry.date <= to else { return false }

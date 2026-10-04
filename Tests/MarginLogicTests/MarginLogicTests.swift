@@ -120,6 +120,17 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(CashFlowForecast.likelyPayments(for: [eugene], entries: [earlier], claimed: [], calendar: calendar).isEmpty)
     }
 
+    @Test func aPaymentAsLateAsTheOverdueGraceStillClosesTheBooking() {
+        // Expected Aug 8, paid Oct 2 (55 days late); the booking still counts in October until matched.
+        let job = UUID()
+        let bend = BookedJobInfo(id: UUID(), title: "Bend", expectedDate: day(2026, 8, 8), expectedGross: 7500, expectedNet: 4500, bookedAt: day(2026, 7, 20))
+        let paid = [gross(7500, day(2026, 10, 2), job: job, title: "Bend"), net(4500, day(2026, 10, 2), job: job)]
+        #expect(CashFlowForecast.unpaid([bend], entries: paid, claimed: [], calendar: calendar).isEmpty)
+        let months = CashFlowForecast.months(entries: paid, booked: CashFlowForecast.unpaid([bend], entries: paid, claimed: [], calendar: calendar),
+                                             plannedMonthly: 5000, now: now, count: 1, calendar: calendar)
+        #expect(months[0].gap == -500)
+    }
+
     @Test func anUnlinkedNetTransferCanCloseABooking() {
         // Only the personal account is connected: the $4,500 owner transfer arrives without a recorded Gross.
         let transfer = net(4500, day(2026, 10, 18), job: UUID())
