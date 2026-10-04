@@ -16,6 +16,9 @@ const SUBJECT = /^[A-Za-z0-9._-]{1,100}$/;
 const unverified = () => Object.assign(new Error('Apple sign-in could not be verified'), { status: 401 });
 const unavailable = () => Object.assign(new Error('Apple sign-in is temporarily unavailable'), { status: 503 });
 const decodeJson = part => JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+// The `sub` of an id_token from Apple's token endpoint, or null. Only the payload is decoded: the token came
+// straight from Apple over TLS in answer to our own client-authenticated request, so it is not re-verified.
+export const idTokenSubject = idToken => { try { const sub = decodeJson(String(idToken).split('.')[1])?.sub; return typeof sub === 'string' && SUBJECT.test(sub) ? sub : null; } catch { return null; } };
 export const sha256Hex = value => crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 
 export class AppleIdentityVerifier {
@@ -105,7 +108,7 @@ export class AppleTokenClient {
     return data;
   }
 
-  // Returns Apple's refresh token, or null when the response carries none.
-  async exchange(code) { const data = await this.post(APPLE_TOKEN_URL, { code, grant_type: 'authorization_code' }); return typeof data?.refresh_token === 'string' && data.refresh_token ? data.refresh_token : null; }
+  // Returns Apple's refresh token and id_token (each null when the response carries none).
+  async exchange(code) { const data = await this.post(APPLE_TOKEN_URL, { code, grant_type: 'authorization_code' }); const text = value => (typeof value === 'string' && value ? value : null); return { refreshToken: text(data?.refresh_token), idToken: text(data?.id_token) }; }
   async revoke(refreshToken) { await this.post(APPLE_REVOKE_URL, { token: refreshToken, token_type_hint: 'refresh_token' }); }
 }

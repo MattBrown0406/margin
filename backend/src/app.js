@@ -1,6 +1,7 @@
 import http from 'node:http';
-import { verifyBearerToken, signToken, isRevoked, sessionEnded } from './auth.js';
+import { verifyBearerToken, signToken, isCurrentSession, sessionEnded } from './auth.js';
 import { createAskLimiter, isAskContext } from './assistant.js';
+import { idTokenSubject } from './apple.js';
 import { MAX_SESSION_TTL_DAYS } from './config.js';
 
 const json = (res, status, body) => { const data = JSON.stringify(body); res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(data), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(data); };
@@ -15,6 +16,23 @@ const ALREADY_REMOVED = new Set(['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN']);
 const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 const publicCode = (error, status) => typeof error.code === 'string' && ERROR_CODE.test(error.code) && (status < 500 || error.plaid === true) ? error.code : undefined;
 const GLOBAL_ASK_KEY = '*';
+// Ask failures that cost the user nothing useful (and, for 503/429, aren't billed): their quota slots are handed back.
+const ASK_UNCOUNTED = new Set([429, 502, 503]);
+const APPLE_RETRY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Retries Apple refresh-token revocations that failed during account deletion: an entry is dropped once Apple
+// accepts it, kept when the retry fails, and dropped with a warning once it is 30 days old. Safe to overlap:
+// revoking twice is harmless and entries are dropped by identity.
+export async function retryPendingAppleRevocations({ store, appleTokens, now = () => Date.now() }) {
+  const done = [], result = { revoked: 0, kept: 0, expired: 0 };
+  for (const entry of await store.pendingAppleRevocations()) {
+    if (!(now() - Date.parse(entry.queuedAt) < APPLE_RETRY_MAX_AGE_MS)) { console.warn(`Giving up on an Apple token revocation queued at ${entry.queuedAt} (older than 30 days)`); done.push(entry); result.expired++; continue; }
+    try { if (!entry.refreshToken) throw new Error('queued token could not be decrypted'); await appleTokens.revoke(entry.refreshToken); done.push(entry); result.revoked++; }
+    catch (error) { console.warn(`Apple token revocation retry failed: ${error?.message || 'unknown error'}`); result.kept++; }
+  }
+  if (done.length) await store.dropPendingAppleRevocations(done);
+  return result;
+}
 
 // apple/appleTokens/assistant are optional: without them their routes answer 503 (or, for appleTokens,
 // Apple token exchange/revocation is skipped) and everything else works. `now` is injectable for tests.
@@ -38,20 +56,23 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         if (!identityToken || identityToken.length > 4096 || !nonce || nonce.length > 128) throw httpError(400, 'identityToken and nonce are required');
         if (typeof authorizationCode !== 'string' || authorizationCode.length > 1024) throw httpError(400, 'authorizationCode must be a string of at most 1024 characters');
         const claims = await apple.verify(identityToken, nonce), userId = `apple:${claims.sub}`;
-        // Kept so account deletion can revoke the user's Apple tokens; never allowed to fail sign-in.
+        // Kept so account deletion can revoke the user's Apple tokens; never allowed to fail sign-in. The code is
+        // only trusted for this user when the id_token Apple returns for it names the same subject.
         if (authorizationCode && appleTokens?.configured) {
-          try { const refreshToken = await appleTokens.exchange(authorizationCode); if (refreshToken) await store.saveAppleRefreshToken(userId, refreshToken); }
-          catch (error) { warn('Apple authorization code exchange failed', error); }
+          try {
+            const { refreshToken, idToken } = await appleTokens.exchange(authorizationCode);
+            if (refreshToken && idTokenSubject(idToken) === claims.sub) await store.saveAppleRefreshToken(userId, refreshToken, new Date(now()).toISOString());
+            else if (refreshToken) console.warn('Apple authorization code does not belong to the signed-in user; refresh token not stored');
+          } catch (error) { warn('Apple authorization code exchange failed', error); }
         }
-        // iat is always after the user's last revocation (see isRevoked), so a new sign-in is never born revoked.
-        const revokedAt = await store.sessionsRevokedAt(userId);
-        const iat = Math.max(nowS(), (revokedAt ?? -1) + 1), exp = iat + Math.min(config.sessionTtlDays || 30, MAX_SESSION_TTL_DAYS) * 86400;
-        const sessionToken = signToken({ sub: userId, ...(config.jwtIssuer ? { iss: config.jwtIssuer } : {}), ...(config.jwtAudience ? { aud: config.jwtAudience } : {}), iat, exp }, config.jwtSecret);
+        // gen ties the session to the user's current generation; revoking (sign-out, deletion) bumps it.
+        const gen = await store.sessionGeneration(userId), iat = nowS(), exp = iat + Math.min(config.sessionTtlDays || 30, MAX_SESSION_TTL_DAYS) * 86400;
+        const sessionToken = signToken({ sub: userId, ...(config.jwtIssuer ? { iss: config.jwtIssuer } : {}), ...(config.jwtAudience ? { aud: config.jwtAudience } : {}), gen, iat, exp }, config.jwtSecret);
         return json(res, 200, { sessionToken, expiresAt: new Date(exp * 1000).toISOString(), userId });
       }
       const session = verifyBearerToken(req.headers.authorization, config.jwtSecret, now(), { issuer: config.jwtIssuer, audience: config.jwtAudience });
       const userId = session.sub;
-      if (isRevoked(session.iat, await store.sessionsRevokedAt(userId))) throw sessionEnded();
+      if (!isCurrentSession(session.gen, await store.sessionGeneration(userId))) throw sessionEnded();
 
       if (req.method === 'POST' && pathname === '/v1/plaid/link-token') {
         // With an itemId this creates an update-mode token so the user can repair a broken login.
@@ -66,9 +87,9 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         const exchanged = await plaid.exchange(publicToken);
         // Persist the access token before any further call can fail, so the Item is never orphaned
         // (still billed by Plaid but impossible to disconnect).
-        // saveItem refuses once this session was revoked (e.g. the account was deleted mid-link); the new
-        // Item is then removed at Plaid so nothing billed is left behind.
-        try { await store.saveItem(userId, { itemId: exchanged.item_id, accessToken: exchanged.access_token, institutionName, accounts: [] }, session.iat); }
+        // saveItem refuses once this session has ended (401) or while the account is being deleted (409); the
+        // new Item is then removed at Plaid so nothing billed is left behind.
+        try { await store.saveItem(userId, { itemId: exchanged.item_id, accessToken: exchanged.access_token, institutionName, accounts: [] }, session.gen); }
         catch (error) { try { await plaid.remove(exchanged.access_token); } catch (removeError) { warn('Could not remove an unsaved Plaid Item', removeError); } throw error; }
         let accounts = [];
         try { accounts = (await plaid.accounts(exchanged.access_token)).accounts.map(mapAccount); await store.updateItem(userId, exchanged.item_id, { accounts }); }
@@ -100,24 +121,23 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         return json(res, 200, { disconnected: true });
       }
       if (req.method === 'DELETE' && pathname === '/v1/account') {
-        // Items are revoked one by one; a non-recoverable Plaid failure stops here so the rest stay
-        // reachable and the client can retry. The user record goes only once no Items remain.
-        // Once Items are gone: revoke Apple tokens (best effort), end every session (which also stops
-        // a link racing this request from saving), revoke anything linked before that, delete the user.
-        const disconnectAll = async () => { for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId); };
-        await disconnectAll();
+        // Resumable: until the last step the session stays valid, so after any failure the client retries this DELETE.
+        // a) Mark the account as being deleted: saveItem now refuses (409) and a racing link is removed at Plaid.
+        await store.beginDeletion(userId, session.gen);
+        // b) Revoke every Item at Plaid; a non-recoverable failure stops here with the remaining Items kept.
+        for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId);
+        // c) Revoke the Apple refresh token; on failure it is queued for retryPendingAppleRevocations, never lost.
         if (appleTokens?.configured) {
           try { const refreshToken = await store.getAppleRefreshToken(userId); if (refreshToken) await appleTokens.revoke(refreshToken); }
-          catch (error) { warn('Apple token revocation failed', error); }
+          catch (error) { warn('Apple token revocation failed; queued for retry', error); await store.queueAppleRevocation(userId, new Date(now()).toISOString()); }
         }
-        await store.revokeSessions(userId, nowS());
-        await disconnectAll();
+        // d) One atomic step: refuses (409) if an Item is still stored, else deletes the user and ends every session.
         await store.deleteUser(userId);
         return json(res, 200, { deleted: true });
       }
       if (req.method === 'DELETE' && pathname === '/v1/session') {
         // Sign out everywhere: every session issued up to now stops working.
-        await store.revokeSessions(userId, nowS());
+        await store.revokeSessions(userId);
         return json(res, 200, { signedOut: true });
       }
       if (req.method === 'POST' && pathname === '/v1/ask') {
@@ -129,7 +149,10 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         if (size > 8000) throw httpError(400, 'context must be an object of at most 8000 characters');
         if (!askLimiter.take(userId)) throw httpError(429, 'Daily question limit reached');
         if (!askGlobalLimiter.take(GLOBAL_ASK_KEY)) { askLimiter.release(userId); throw httpError(429, 'Ask Margin is at capacity today'); }
-        return json(res, 200, { answer: await assistant.answer({ question, context }) });
+        let answer;
+        try { answer = await assistant.answer({ question, context }); }
+        catch (error) { if (ASK_UNCOUNTED.has(Number(error.status))) { askLimiter.release(userId); askGlobalLimiter.release(GLOBAL_ASK_KEY); } throw error; }
+        return json(res, 200, { answer });
       }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {

@@ -87,15 +87,20 @@ export function createAssistant(config, { loadSdk = () => import('@anthropic-ai/
 }
 
 // Rolling-window limiter keyed by user (or one shared key for the global cap); `now` is injectable so
-// tests can move the clock. release() hands back the most recent take when a later check rejects.
+// tests can move the clock. release() hands back the most recent take (a later check rejected, or the
+// question failed). Keys whose window has emptied are pruned, at most once an hour, so idle users don't pile up.
 export function createAskLimiter({ limit = 30, windowMs = DAY_MS, now = () => Date.now() } = {}) {
   const hits = new Map();
+  let prunedAt = -Infinity;
   return {
     take(key) {
-      const t = now(), recent = (hits.get(key) || []).filter(at => t - at < windowMs);
+      const t = now();
+      if (t - prunedAt >= windowMs / 24) { prunedAt = t; for (const [k, list] of hits) if (!list.some(at => t - at < windowMs)) hits.delete(k); }
+      const recent = (hits.get(key) || []).filter(at => t - at < windowMs);
       if (recent.length >= limit) { hits.set(key, recent); return false; }
       recent.push(t); hits.set(key, recent); return true;
     },
-    release(key) { hits.get(key)?.pop(); }
+    release(key) { const list = hits.get(key); list?.pop(); if (list && !list.length) hits.delete(key); },
+    get size() { return hits.size; }
   };
 }

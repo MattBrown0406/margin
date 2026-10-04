@@ -32,7 +32,9 @@ export function loadConfig(env = process.env) {
   const appleCredentials = [config.appleTeamId, config.appleKeyId, config.applePrivateKey];
   if (appleCredentials.some(Boolean)) {
     if (!appleCredentials.every(Boolean)) throw new Error('APPLE_TEAM_ID, APPLE_KEY_ID and APPLE_PRIVATE_KEY must be set together');
-    try { crypto.createPrivateKey(config.applePrivateKey); } catch { throw new Error('APPLE_PRIVATE_KEY must be the .p8 PEM private key'); }
+    let key; try { key = crypto.createPrivateKey(config.applePrivateKey); } catch { throw new Error('APPLE_PRIVATE_KEY must be the .p8 PEM private key'); }
+    // Apple's client secret is ES256: anything but a P-256 EC key would only fail later, at the first exchange.
+    if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') throw new Error('APPLE_PRIVATE_KEY must be a P-256 (ES256) .p8 key');
   }
   if (production) {
     if (config.jwtSecret.length < 32) throw new Error('MARGIN_JWT_SECRET must be at least 32 characters in production');

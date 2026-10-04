@@ -32,23 +32,32 @@ All JSON. Errors are `{ "error": string, "code"?: string }`. `code` is only ever
 
 ### Sign in with Apple → Margin session
 
-`POST /v1/auth/apple` takes the identity token from `ASAuthorizationAppleIDCredential` and the **raw** nonce the app generated (the app sends `sha256(nonce)` hex to Apple). The service verifies the token's RS256 signature against Apple's JWKS (`https://appleid.apple.com/auth/keys`, cached for an hour; concurrent requests share one fetch, an unknown `kid` triggers at most one refetch per minute, and if Apple is unreachable the cached keys keep being used), `iss`, `aud` (= `APPLE_BUNDLE_ID`), `exp`, `iat` (no more than 10 minutes in the future or 1 day old), the hashed `nonce` (required), and `sub`. Each identity token is single use: its nonce is remembered (in memory, per process) until the token expires, and a replay gets `401`. It then mints an HS256 session JWT signed with `MARGIN_JWT_SECRET` (`sub = "apple:<Apple sub>"`, `iss`/`aud` from `MARGIN_JWT_ISSUER`/`MARGIN_JWT_AUDIENCE`, `exp` after `MARGIN_SESSION_TTL_DAYS`), which every bearer route accepts.
+`POST /v1/auth/apple` takes the identity token from `ASAuthorizationAppleIDCredential` and the **raw** nonce the app generated (the app sends `sha256(nonce)` hex to Apple). The service verifies the token's RS256 signature against Apple's JWKS (`https://appleid.apple.com/auth/keys`, cached for an hour; concurrent requests share one fetch, an unknown `kid` triggers at most one refetch per minute, and if Apple is unreachable the cached keys keep being used), `iss`, `aud` (= `APPLE_BUNDLE_ID`), `exp`, `iat` (no more than 10 minutes in the future or 1 day old), the hashed `nonce` (required), and `sub`. Each identity token is single use: its nonce is remembered (in memory, per process) until the token expires, and a replay gets `401`. It then mints an HS256 session JWT signed with `MARGIN_JWT_SECRET` (`sub = "apple:<Apple sub>"`, `gen` = the user's current session generation, `iat`, `iss`/`aud` from `MARGIN_JWT_ISSUER`/`MARGIN_JWT_AUDIENCE`, `exp` after `MARGIN_SESSION_TTL_DAYS`), which every bearer route accepts.
 
-- `authorizationCode` (optional, string ≤ 1024 chars) is the `ASAuthorizationAppleIDCredential.authorizationCode`. When `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` are set, it is exchanged at `https://appleid.apple.com/auth/token` (ES256 client secret) and Apple's refresh token is stored encrypted on the user record so account deletion can revoke it. A failed exchange is logged and does not fail sign-in.
+- `authorizationCode` (optional, string ≤ 1024 chars) is the `ASAuthorizationAppleIDCredential.authorizationCode`. When `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` are set, it is exchanged at `https://appleid.apple.com/auth/token` (ES256 client secret). Apple's refresh token is stored encrypted on the user record, so account deletion can revoke it, only when the `sub` of the `id_token` Apple returns for that code matches the verified identity token's `sub`; otherwise a warning is logged and nothing is stored. (The `id_token` payload is decoded without re-verifying its signature: it comes straight from Apple over TLS in answer to our client-authenticated request.) A failed exchange is logged and does not fail sign-in.
 - `400` missing `identityToken` (≤ 4096 chars) or `nonce` (≤ 128 chars), or an invalid `authorizationCode`
 - `401` "Apple sign-in could not be verified" for any token problem
 - `503` "Sign in with Apple is not configured" without `APPLE_BUNDLE_ID` or a 32+ character `MARGIN_JWT_SECRET`; `503` when Apple's keys can't be fetched
 
 ### Sessions and revocation
 
-Every bearer route rejects a revoked session with `401` "Your session has ended. Sign in again." A user's revocation is a timestamp (epoch seconds) kept outside the user record, so it outlives account deletion. The rule: a session is revoked when its `iat` is missing or `<=` the revocation time. Sign-in mints `iat = max(now, revokedAt + 1)`, so signing in again right after a revocation (even in the same second) works, while every older session stays dead.
+Every bearer route rejects an ended session with `401` "Your session has ended. Sign in again." Each user has a **session generation**: an integer, 0 until the user first revokes, kept outside the user record (so it outlives account deletion) and bumped by one, atomically, by every revocation. A session is valid only while its `gen` claim equals the current generation; a token without `gen` (for example one from an external issuer) counts as generation 0, so it stops working the first time its user revokes. No clocks are involved: signing in again right after a revocation works, and a second revocation in the same second still ends that new session.
 
-- `DELETE /v1/session` signs the caller out everywhere (revokes all of that user's sessions issued so far).
+Data files written by the earlier timestamp scheme still load: every user listed in their `revocations` starts at generation 1 (so sessions minted before the upgrade stay ended for users who had revoked, and those users sign in again), and the old field is dropped on the next write.
+
+- `DELETE /v1/session` signs the caller out everywhere (bumps the generation, ending all of that user's sessions issued so far).
 - `MARGIN_SESSION_TTL_DAYS` is 1–90 (default 30).
 
 ### Account deletion
 
-`DELETE /v1/account` revokes each linked Item at Plaid (`/item/remove`; Items Plaid already forgot are treated as removed) and deletes it locally. It then revokes the user's Apple tokens at `https://appleid.apple.com/auth/revoke` when Apple credentials are configured and a refresh token is stored (best effort: a failure is logged, not fatal), revokes all of the user's sessions, and deletes the user record. If Plaid fails for any other reason the request stops with that error and the remaining Items are kept, so the app can retry. Deleting an account with no data also returns `200`. A link (`POST /v1/plaid/exchange`) that completes after its session was revoked is refused with `401`, and the new Item is removed at Plaid so it is not left billed.
+`DELETE /v1/account` is resumable: the caller's session stays valid until the very last step, so after any failure the app retries the same request.
+
+1. The user record is marked `deleting`. From then on a link (`POST /v1/plaid/exchange`) is refused with `409` "Account is being deleted" and the just-exchanged Item is removed at Plaid, so nothing billed is left behind. The flag stays set if deletion fails, so linking stays blocked until a retry finishes.
+2. Each linked Item is revoked at Plaid (`/item/remove`; Items Plaid already forgot are treated as removed) and deleted locally. Any other Plaid failure stops the request with that error; the remaining Items and the session are kept.
+3. When Apple credentials are configured and a refresh token is stored, it is revoked at `https://appleid.apple.com/auth/revoke`. If that fails, the encrypted token moves to a top-level `pendingAppleRevocations` queue (`{ token, queuedAt }`, outliving the user record) and deletion continues. The server retries the queue at start and then hourly (only with Apple credentials): an entry is dropped once Apple accepts it, kept while it fails, and dropped with a warning after 30 days. An Apple refresh token from a sign-in that lands mid-deletion goes straight to that queue.
+4. One atomic store step deletes the user record and bumps the session generation together, ending every session; it refuses with `409` if an Item is somehow still stored, so an Item is never dropped without being revoked at Plaid.
+
+Deleting an account with no data also returns `200`. A link that completes after its session ended is refused with `401` and its Item is likewise removed at Plaid.
 
 ### Ask Margin
 
@@ -56,7 +65,7 @@ Every bearer route rejects a revoked session with `401` "Your session has ended.
 
 - `400` invalid `question` or `context`
 - `422` "Margin can't help with that question." when Claude declines
-- `429` "Daily question limit reached" after 30 questions per user in a rolling 24 hours; `429` "Ask Margin is at capacity today" after `ASK_DAILY_GLOBAL_LIMIT` (default 2000) questions across all users in a rolling 24 hours (both in memory, per process); `429` "Assistant is busy, try again shortly" when Anthropic rate-limits
+- `429` "Daily question limit reached" after 30 questions per user in a rolling 24 hours (a question that fails with `429`, `502` or `503` hands its per-user and global slots back; answers and `422` refusals count); `429` "Ask Margin is at capacity today" after `ASK_DAILY_GLOBAL_LIMIT` (default 2000) questions across all users in a rolling 24 hours (both in memory, per process); `429` "Assistant is busy, try again shortly" when Anthropic rate-limits
 - `502` upstream failure (including a reply cut off before any text); `503` "Ask Margin isn't configured" without `ANTHROPIC_API_KEY`
 
 Each question is capped at `max_tokens: 3000` with `effort: "low"`, and the SDK retries a failed call at most once. A reply cut off at the token cap returns the text written so far.
@@ -80,7 +89,7 @@ npm test
    - `TOKEN_ENCRYPTION_KEY`: `openssl rand -hex 32`
 3. Provide `PLAID_CLIENT_ID` and the environment-specific `PLAID_SECRET` through the deployment platform's encrypted secret store.
    - `APPLE_BUNDLE_ID`: the iOS bundle identifier (required in production)
-   - `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`: a Sign in with Apple key (.p8 PEM; literal `\n` allowed), so account deletion revokes the user's Apple tokens (App Store guideline 5.1.1(v)); set all three or none
+   - `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`: a Sign in with Apple key (.p8 PEM, which must be a P-256 EC key; literal `\n` allowed), so account deletion revokes the user's Apple tokens (App Store guideline 5.1.1(v)); set all three or none
    - `MARGIN_SESSION_TTL_DAYS`: session lifetime in days (default 30, 1–90)
    - `ASK_DAILY_GLOBAL_LIMIT`: Ask Margin questions per rolling day across all users (default 2000)
    - `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`, default `claude-opus-5-5`) to enable Ask Margin, after `npm install`

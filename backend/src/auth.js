@@ -34,8 +34,8 @@ export function signToken(payload, secret) {
 }
 export const signTestToken = signToken;
 
-// Revocation rule: a session is dead when its user has a revocation timestamp (epoch seconds) and the
-// session's iat is missing or <= that timestamp. Sign-in mints iat = max(now, revokedAt + 1), so a fresh
-// sign-in in the same second as a revocation still works while every older session stays rejected.
-export const isRevoked = (iat, revokedAt) => typeof revokedAt === 'number' && !(typeof iat === 'number' && Number.isFinite(iat) && iat > revokedAt);
+// Revocation rule: each user has a session generation (0 until they first revoke) that every revocation
+// bumps by one. A session is live only while its `gen` claim equals the current generation; a token without
+// `gen` counts as generation 0, so it stops working the first time its user revokes. No clocks involved.
+export const isCurrentSession = (gen, generation) => (gen ?? 0) === generation;
 export const sessionEnded = () => Object.assign(new Error('Your session has ended. Sign in again.'), { status: 401 });

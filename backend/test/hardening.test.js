@@ -5,21 +5,25 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { once } from 'node:events';
-import { createApp } from '../src/app.js';
+import { createApp, retryPendingAppleRevocations } from '../src/app.js';
 import { FileStore } from '../src/store.js';
 import { PlaidClient } from '../src/plaid.js';
 import { signTestToken } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
-import { AppleIdentityVerifier, AppleTokenClient, sha256Hex } from '../src/apple.js';
+import { AppleIdentityVerifier, AppleTokenClient, sha256Hex, idTokenSubject } from '../src/apple.js';
 import { createAskLimiter, readAnswer, isAskContext } from '../src/assistant.js';
 
 const secret = 'test-jwt-secret-that-is-at-least-thirty-two-characters';
 const encryptionKey = '11'.repeat(32);
 const bundleId = 'com.margin.app';
-const T = 1_800_000_000; // fixed clock (epoch seconds) for deterministic iat/revocation checks
+const T = 1_800_000_000; // fixed clock (epoch seconds): every request in a test happens in the same second
 const ENDED = 'Your session has ended. Sign in again.';
 const plaidError = (code, status = 502) => Object.assign(new Error(code), { code, status });
 const snapshot = { verdict: 'fitsNextMonth', price: 480 };
+const DAY_MS = 24 * 60 * 60 * 1000;
+const claimsOf = token => JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
+// An id_token as Apple's token endpoint returns it; the app only reads its payload.
+const idTokenFor = sub => [{ alg: 'RS256', kid: 'k' }, { iss: 'https://appleid.apple.com', aud: bundleId, sub }].map(part => Buffer.from(JSON.stringify(part)).toString('base64url')).concat('sig').join('.');
 
 class FakePlaid {
   constructor(overrides = {}) { this.removedTokens = []; Object.assign(this, overrides); }
@@ -72,6 +76,27 @@ test('a global daily cap stops Ask Margin at capacity and hands the user slot ba
   for (const bad of ['0', '-1', '2.5', 'lots']) assert.throws(() => loadConfig({ TOKEN_ENCRYPTION_KEY: encryptionKey, ASK_DAILY_GLOBAL_LIMIT: bad }), /ASK_DAILY_GLOBAL_LIMIT/);
 });
 
+test('failed questions (429/502/503) hand back both quota slots; answers and refusals keep them', async () => {
+  let clock = 0, status = 0;
+  const askLimiter = createAskLimiter({ now: () => clock }), askGlobalLimiter = createAskLimiter({ limit: 40, now: () => clock });
+  const assistant = { async answer() { if (status) throw Object.assign(new Error('Ask Margin could not answer right now'), { status, expose: true }); return 'ok'; } };
+  const f = await fixture({ assistant, askLimiter, askGlobalLimiter });
+  const ask = () => f.post('/v1/ask', { question: 'q', context: snapshot });
+  try {
+    for (status of [502, 503, 429]) for (let i = 0; i < 31; i++) assert.equal((await ask()).status, status, `${status} #${i + 1}`);
+    status = 422;
+    assert.equal((await ask()).status, 422);
+    status = 0;
+    for (let i = 0; i < 29; i++) assert.equal((await ask()).status, 200, `answer #${i + 1}`);
+    assert.deepEqual(await ask(), { status: 429, data: { error: 'Daily question limit reached' } }, 'the refusal and 29 answers used the 30 slots');
+    clock += DAY_MS;
+    assert.equal(askLimiter.take('ana'), true);
+    assert.equal(askLimiter.size, 1, 'users whose window emptied are pruned');
+    askLimiter.release('ana');
+    assert.equal(askLimiter.size, 0);
+  } finally { await f.close(); }
+});
+
 test('context is validated structurally (depth, size, cycles) and hostile nesting is a 400, not a 500', async () => {
   const nest = levels => { let value = 1; for (let i = 0; i < levels; i++) value = { v: value }; return value; }; // `levels` nested objects
   assert.equal(isAskContext(nest(6)), true);
@@ -98,25 +123,40 @@ test('context is validated structurally (depth, size, cycles) and hostile nestin
 
 // ---- 2. Session revocation ----
 
-test('account deletion revokes old sessions while a later sign-in (same second) works', async () => {
+test('account deletion ends old sessions while a later sign-in (same second) works', async () => {
   const f = await fixture();
   try {
     const first = await f.signIn('u1');
-    assert.equal(JSON.parse(Buffer.from(first.split('.')[1], 'base64url')).iat, T);
+    assert.deepEqual([claimsOf(first).iat, claimsOf(first).gen], [T, 0]);
     assert.equal((await f.call('/v1/plaid/accounts', { auth: first })).status, 200);
     assert.deepEqual(await f.call('/v1/account', { method: 'DELETE', auth: first }), { status: 200, data: { deleted: true } });
     assert.deepEqual(await f.call('/v1/plaid/accounts', { auth: first }), { status: 401, data: { error: ENDED } });
-    assert.equal((await f.call('/v1/plaid/accounts', { auth: f.session('apple:u1', null) })).status, 401, 'a session without iat is revoked too');
+    assert.equal((await f.call('/v1/plaid/accounts', { auth: f.session('apple:u1', null) })).status, 401, 'a session without gen is ended too');
     const disk = await f.readDisk();
     assert.equal(Object.hasOwn(disk.users, 'apple:u1'), false);
-    assert.equal(disk.revocations['apple:u1'], T, 'the revocation outlives the user record');
+    assert.equal(disk.sessionGenerations['apple:u1'], 1, 'the generation outlives the user record');
     const second = await f.signIn('u1'); // still the same second as the deletion
-    const payload = JSON.parse(Buffer.from(second.split('.')[1], 'base64url'));
-    assert.equal(payload.iat, T + 1);
+    const payload = claimsOf(second);
+    assert.deepEqual([payload.iat, payload.gen], [T, 1]);
     assert.equal(payload.exp - payload.iat, 30 * 86400);
     assert.equal((await f.call('/v1/plaid/accounts', { auth: second })).status, 200);
     f.clock.s += 10;
-    assert.equal((await f.call('/v1/plaid/accounts', { auth: f.session('apple:u1', T + 2) })).status, 200);
+    assert.equal((await f.call('/v1/plaid/accounts', { auth: f.session('apple:u1', T + 2) })).status, 401, 'a later iat without gen (another issuer) no longer works once the user has revoked');
+  } finally { await f.close(); }
+});
+
+test('a revocation in the same second as the sign-in before it still ends that session', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.signIn('s1');
+    assert.equal((await f.call('/v1/session', { method: 'DELETE', auth: a })).status, 200);
+    const b = await f.signIn('s1'); // same second as the first revocation
+    assert.equal((await f.call('/v1/plaid/accounts', { auth: b })).status, 200, 'a sign-in after revocation works');
+    assert.equal((await f.call('/v1/session', { method: 'DELETE', auth: b })).status, 200); // and again, same second
+    for (const token of [a, b]) assert.deepEqual(await f.call('/v1/plaid/accounts', { auth: token }), { status: 401, data: { error: ENDED } });
+    const c = await f.signIn('s1');
+    assert.equal(claimsOf(c).gen, 2);
+    assert.equal((await f.call('/v1/plaid/accounts', { auth: c })).status, 200);
   } finally { await f.close(); }
 });
 
@@ -132,20 +172,31 @@ test('DELETE /v1/session signs the caller out everywhere', async () => {
   } finally { await f.close(); }
 });
 
-test('the store tolerates files without revocations, keeps own-key safety, and only moves revocations forward', async () => {
+test('the store migrates old revocations, keeps own-key safety, and only moves generations forward', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'margin-store-')), file = path.join(dir, 'data.json');
+  const item = { itemId: 'i', accessToken: 'a', institutionName: 'B' };
   try {
-    await fs.writeFile(file, JSON.stringify({ users: { matt: { items: {}, transactions: {} } } }));
+    await fs.writeFile(file, JSON.stringify({ users: { matt: { items: {}, transactions: {} } }, revocations: { ana: T, toString: T } }));
     const store = new FileStore(file, encryptionKey);
-    assert.equal(await store.sessionsRevokedAt('matt'), undefined);
-    assert.equal(await store.sessionsRevokedAt('toString'), undefined);
-    await assert.rejects(store.revokeSessions('__proto__', T), { status: 400 });
-    assert.equal(await store.revokeSessions('matt', T), T);
-    assert.equal(await store.revokeSessions('matt', T - 100), T, 'an older timestamp never un-revokes');
-    assert.equal(await store.sessionsRevokedAt('matt'), T);
-    await assert.rejects(store.saveItem('matt', { itemId: 'i', accessToken: 'a', institutionName: 'B' }, T), { status: 401, message: ENDED });
-    await store.saveItem('matt', { itemId: 'i', accessToken: 'a', institutionName: 'B' }, T + 1);
+    assert.equal(await store.sessionGeneration('matt'), 0);
+    assert.equal(await store.sessionGeneration('toString'), 0);
+    assert.equal(await store.sessionGeneration('ana'), 1, 'a user revoked under the timestamp scheme starts at generation 1');
+    await assert.rejects(store.revokeSessions('__proto__'), { status: 400 });
+    assert.equal(await store.revokeSessions('matt'), 1);
+    assert.equal(await store.revokeSessions('matt'), 2);
+    const disk = JSON.parse(await fs.readFile(file, 'utf8'));
+    assert.equal('revocations' in disk, false);
+    assert.deepEqual(disk.sessionGenerations, { ana: 1, matt: 2 });
+    for (const gen of [undefined, 1, 3, '2']) await assert.rejects(store.saveItem('matt', item, gen), { status: 401, message: ENDED }, String(gen));
+    await store.saveItem('matt', item, 2);
     assert.equal(await store.getAccessToken('matt', 'i'), 'a');
+    await assert.rejects(store.deleteUser('matt'), { status: 409 }, 'never deletes a user whose Items are still stored');
+    assert.equal(await store.getAccessToken('matt', 'i'), 'a');
+    assert.equal(await store.sessionGeneration('matt'), 2, 'a refused deletion ends no sessions');
+    await store.beginDeletion('matt', 2);
+    await assert.rejects(store.saveItem('matt', { ...item, itemId: 'j' }, 2), { status: 409, message: 'Account is being deleted' });
+    assert.equal(await store.saveAppleRefreshToken('matt', 'late-refresh'), false, 'a token arriving mid-deletion is queued for revocation');
+    assert.deepEqual((await store.pendingAppleRevocations()).map(entry => entry.refreshToken), ['late-refresh']);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
 
@@ -180,7 +231,8 @@ function appleRest({ fail = {} } = {}) {
     const kind = new URL(url).pathname;
     calls.push({ kind, form });
     if (fail[kind]) return { ok: false, status: 400, json: async () => ({ error: 'invalid_grant', error_description: `secret detail ${form.code || form.token}` }) };
-    if (kind === '/auth/token') { assert.equal(form.grant_type, 'authorization_code'); return { ok: true, status: 200, json: async () => ({ access_token: 'at', refresh_token: `refresh-for-${form.code}`, id_token: 'x' }) }; }
+    // The code `code-N` belongs to Apple user `uN`.
+    if (kind === '/auth/token') { assert.equal(form.grant_type, 'authorization_code'); return { ok: true, status: 200, json: async () => ({ access_token: 'at', refresh_token: `refresh-for-${form.code}`, id_token: idTokenFor(form.code.replace(/^code-/, 'u')) }) }; }
     assert.equal(kind, '/auth/revoke');
     assert.equal(form.token_type_hint, 'refresh_token');
     return { ok: true, status: 200, json: async () => ({}) };
@@ -193,7 +245,8 @@ test('AppleTokenClient signs an ES256 client secret and exchanges/revokes with f
   const rest = appleRest();
   const client = tokenClient(rest.fetchImpl);
   assert.equal(client.configured, true);
-  assert.equal(await client.exchange('auth-code'), 'refresh-for-auth-code');
+  const exchanged = await client.exchange('auth-code');
+  assert.deepEqual([exchanged.refreshToken, idTokenSubject(exchanged.idToken)], ['refresh-for-auth-code', 'auth-code']);
   await client.revoke('refresh-for-auth-code');
   assert.deepEqual(rest.calls.map(c => [c.kind, c.form.code ?? c.form.token]), [['/auth/token', 'auth-code'], ['/auth/revoke', 'refresh-for-auth-code']]);
   for (const missing of ['teamId', 'keyId', 'privateKey', 'bundleId']) assert.equal(tokenClient(rest.fetchImpl, { [missing]: '' }).configured, false, missing);
@@ -235,12 +288,74 @@ test('Apple exchange and revoke failures never block sign-in or deletion, and lo
   try { assert.equal((await skipped.post('/v1/auth/apple', { identityToken: 'u7', nonce: 'n', authorizationCode: 'code' }, { auth: null })).status, 200); } finally { await skipped.close(); }
 });
 
+test('the Apple refresh token is stored only when the code\'s id_token names the signed-in user', async () => {
+  const logs = [];
+  const f = await fixture({ appleTokens: tokenClient(appleRest().fetchImpl) });
+  try {
+    await f.signIn('u9', { authorizationCode: 'code-9' });
+    assert.equal(await f.store.getAppleRefreshToken('apple:u9'), 'refresh-for-code-9');
+    await quietly(() => f.signIn('u10', { authorizationCode: 'code-9' }), logs); // someone else's code
+    assert.equal(await f.store.getAppleRefreshToken('apple:u10'), null);
+    assert.equal(await f.store.getAppleRefreshToken('apple:u9'), 'refresh-for-code-9');
+    assert.deepEqual(logs, ['Apple authorization code does not belong to the signed-in user; refresh token not stored']);
+  } finally { await f.close(); }
+  assert.equal(idTokenSubject('not-a-jwt'), null);
+  assert.equal(idTokenSubject(null), null);
+});
+
+test('a failed Apple revocation is queued at deletion and retried until it succeeds or expires', async () => {
+  const logs = [], attempts = [];
+  let failing = true;
+  const appleTokens = { configured: true, async revoke(token) { attempts.push(token); if (failing) throw Object.assign(new Error('Apple /auth/revoke failed: HTTP 503'), { status: 502 }); } };
+  const f = await fixture({ appleTokens });
+  const retry = (ms = T * 1000) => retryPendingAppleRevocations({ store: f.store, appleTokens, now: () => ms });
+  try {
+    await quietly(async () => {
+      for (const sub of ['q1', 'q2']) {
+        const token = await f.signIn(sub);
+        await f.store.saveAppleRefreshToken(`apple:${sub}`, `refresh-${sub}`);
+        assert.equal((await f.call('/v1/account', { method: 'DELETE', auth: token })).status, 200, 'deletion still completes');
+      }
+      const disk = await f.readDisk();
+      assert.deepEqual(disk.pendingAppleRevocations.map(entry => entry.queuedAt), [new Date(T * 1000).toISOString(), new Date(T * 1000).toISOString()]);
+      assert.equal(JSON.stringify(disk).includes('refresh-q'), false, 'queued tokens stay encrypted');
+      assert.deepEqual(Object.keys(disk.users), []);
+      assert.deepEqual(await retry(), { revoked: 0, kept: 2, expired: 0 });
+      assert.equal((await f.readDisk()).pendingAppleRevocations.length, 2, 'kept while Apple keeps failing');
+      failing = false;
+      attempts.length = 0;
+      assert.deepEqual(await retry(), { revoked: 2, kept: 0, expired: 0 });
+      assert.deepEqual(attempts, ['refresh-q1', 'refresh-q2']);
+      assert.deepEqual((await f.readDisk()).pendingAppleRevocations, []);
+      failing = true;
+      const token = await f.signIn('q3');
+      await f.store.saveAppleRefreshToken('apple:q3', 'refresh-q3');
+      assert.equal((await f.call('/v1/account', { method: 'DELETE', auth: token })).status, 200);
+      attempts.length = 0;
+      assert.deepEqual(await retry(T * 1000 + 31 * DAY_MS), { revoked: 0, kept: 0, expired: 1 });
+      assert.deepEqual(attempts, [], 'an expired entry is dropped without another attempt');
+      assert.deepEqual((await f.readDisk()).pendingAppleRevocations, []);
+    }, logs);
+    assert.ok(logs.some(line => line.includes('older than 30 days')));
+    for (const line of logs) assert.equal(line.includes('refresh-q'), false, line);
+  } finally { await f.close(); }
+});
+
 test('config requires Apple credentials together and as a PEM key, accepting literal \\n', () => {
   const base = { TOKEN_ENCRYPTION_KEY: encryptionKey };
   const config = loadConfig({ ...base, APPLE_TEAM_ID: 'TEAM123', APPLE_KEY_ID: 'KEY123', APPLE_PRIVATE_KEY: escapedPem });
   assert.equal(config.applePrivateKey, p8Pem.trim());
   assert.throws(() => loadConfig({ ...base, APPLE_TEAM_ID: 'TEAM123' }), /set together/);
   assert.throws(() => loadConfig({ ...base, APPLE_TEAM_ID: 'TEAM123', APPLE_KEY_ID: 'KEY123', APPLE_PRIVATE_KEY: 'not a key' }), /APPLE_PRIVATE_KEY/);
+});
+
+test('config rejects an APPLE_PRIVATE_KEY that is not a P-256 EC key', () => {
+  const base = { TOKEN_ENCRYPTION_KEY: encryptionKey, APPLE_TEAM_ID: 'TEAM123', APPLE_KEY_ID: 'KEY123' };
+  for (const [type, options] of [['rsa', { modulusLength: 2048 }], ['ec', { namedCurve: 'P-384' }], ['ed25519', undefined]]) {
+    const pem = crypto.generateKeyPairSync(type, options).privateKey.export({ type: 'pkcs8', format: 'pem' });
+    assert.throws(() => loadConfig({ ...base, APPLE_PRIVATE_KEY: pem }), /APPLE_PRIVATE_KEY must be a P-256/, type);
+  }
+  assert.equal(loadConfig({ ...base, APPLE_PRIVATE_KEY: p8Pem }).applePrivateKey, p8Pem);
 });
 
 // ---- 4. JWKS refetch amplification ----
@@ -308,6 +423,45 @@ test('a link that finishes after account deletion is refused and removed at Plai
     assert.deepEqual(await linking, { status: 401, data: { error: ENDED } });
     assert.deepEqual(plaid.removedTokens, ['access-late']);
     assert.equal(Object.hasOwn((await f.readDisk()).users, 'apple:u8'), false, 'no orphaned Item was stored');
+  } finally { await f.close(); }
+});
+
+test('an Item linked after the Plaid sweep but before deletion finishes is refused and removed at Plaid', async () => {
+  let midDeletion = async () => {}, late;
+  const plaid = new FakePlaid();
+  const appleTokens = { configured: true, async revoke() { await midDeletion(); } };
+  const f = await fixture({ plaid, appleTokens });
+  try {
+    const token = await f.signIn('d1');
+    assert.equal((await f.post('/v1/plaid/exchange', { publicToken: 'early' }, { auth: token })).status, 201);
+    await f.store.saveAppleRefreshToken('apple:d1', 'refresh-d1');
+    // Runs during step c (Apple revocation): after every Item was removed, before the final atomic step.
+    midDeletion = async () => { late = await f.post('/v1/plaid/exchange', { publicToken: 'late' }, { auth: token }); };
+    assert.deepEqual(await quietly(() => f.call('/v1/account', { method: 'DELETE', auth: token })), { status: 200, data: { deleted: true } });
+    assert.deepEqual(late, { status: 409, data: { error: 'Account is being deleted' } });
+    assert.deepEqual(plaid.removedTokens, ['access-early', 'access-late'], 'the late Item was removed at Plaid, not dropped');
+    assert.equal(Object.hasOwn((await f.readDisk()).users, 'apple:d1'), false);
+  } finally { await f.close(); }
+});
+
+test('a Plaid failure mid-deletion leaves the session usable and the same DELETE can be retried', async () => {
+  let failing = true;
+  const plaid = new FakePlaid({ async remove(token) { if (failing) throw plaidError('INTERNAL_SERVER_ERROR'); this.removedTokens.push(token); return {}; } });
+  const appleTokens = { configured: true, revoked: [], async revoke(token) { this.revoked.push(token); } };
+  const f = await fixture({ plaid, appleTokens });
+  try {
+    const token = await f.signIn('d2');
+    assert.equal((await f.post('/v1/plaid/exchange', { publicToken: 'a' }, { auth: token })).status, 201);
+    await f.store.saveAppleRefreshToken('apple:d2', 'refresh-d2');
+    assert.equal((await f.call('/v1/account', { method: 'DELETE', auth: token })).status, 502);
+    const after = await f.call('/v1/plaid/accounts', { auth: token });
+    assert.equal(after.status, 200, 'the session survives a failed deletion');
+    assert.deepEqual(after.data.connections.map(c => c.itemId), ['item-a']);
+    assert.deepEqual(appleTokens.revoked, [], 'Apple is only revoked once every Item is gone');
+    failing = false;
+    assert.deepEqual(await f.call('/v1/account', { method: 'DELETE', auth: token }), { status: 200, data: { deleted: true } });
+    assert.deepEqual([plaid.removedTokens, appleTokens.revoked], [['access-a'], ['refresh-d2']]);
+    assert.deepEqual(await f.call('/v1/plaid/accounts', { auth: token }), { status: 401, data: { error: ENDED } });
   } finally { await f.close(); }
 });
 
