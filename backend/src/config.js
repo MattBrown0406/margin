@@ -11,9 +11,14 @@ export function loadConfig(env = process.env) {
     jwtIssuer: env.MARGIN_JWT_ISSUER || '',
     jwtAudience: env.MARGIN_JWT_AUDIENCE || '',
     encryptionKey: env.TOKEN_ENCRYPTION_KEY || '',
-    dataFile: env.DATA_FILE || './data/margin-bank-data.json'
+    dataFile: env.DATA_FILE || './data/margin-bank-data.json',
+    appleBundleId: env.APPLE_BUNDLE_ID || '',
+    sessionTtlDays: env.MARGIN_SESSION_TTL_DAYS ? Number(env.MARGIN_SESSION_TTL_DAYS) : 30,
+    anthropicApiKey: env.ANTHROPIC_API_KEY || '',
+    anthropicModel: env.ANTHROPIC_MODEL || 'claude-opus-5-5'
   };
   if (!['sandbox', 'production'].includes(config.plaidEnv)) throw new Error('PLAID_ENV must be sandbox or production (Plaid retired its development environment)');
+  if (!Number.isInteger(config.sessionTtlDays) || config.sessionTtlDays < 1 || config.sessionTtlDays > 365) throw new Error('MARGIN_SESSION_TTL_DAYS must be a whole number of days from 1 to 365');
   if (production) {
     if (config.jwtSecret.length < 32) throw new Error('MARGIN_JWT_SECRET must be at least 32 characters in production');
     if (!config.jwtIssuer || !config.jwtAudience) throw new Error('MARGIN_JWT_ISSUER and MARGIN_JWT_AUDIENCE are required in production');

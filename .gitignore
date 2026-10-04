@@ -25,3 +25,6 @@ deliverables/
 # Logs and temporary files
 *.log
 *.tmp
+
+# SwiftPM build output (swift test for MarginLogic)
+.build/

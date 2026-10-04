@@ -1,5 +1,6 @@
 import http from 'node:http';
-import { verifyBearerToken } from './auth.js';
+import { verifyBearerToken, signToken } from './auth.js';
+import { createAskLimiter } from './assistant.js';
 
 const json = (res, status, body) => { const data = JSON.stringify(body); res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(data), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(data); };
 const cleanText = (value, max = 100) => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -9,12 +10,30 @@ const mapAccount = a => ({ id: a.account_id, name: cleanText(a.name), officialNa
 const mapTransaction = t => ({ id: t.transaction_id, accountId: t.account_id, name: cleanText(t.merchant_name || t.name), amount: t.amount, date: t.authorized_date || t.date, pending: Boolean(t.pending), category: t.personal_finance_category?.primary || 'GENERAL_MERCHANDISE' });
 // Plaid no longer knows this Item, so there is nothing left to revoke remotely.
 const ALREADY_REMOVED = new Set(['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN']);
+const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-export function createApp({ config, plaid, store }) {
+// apple/assistant are optional: without them their routes answer 503 and everything else works.
+export function createApp({ config, plaid, store, apple = null, assistant = null, askLimiter = createAskLimiter() }) {
+  // Revokes the Item at Plaid (tolerating Items Plaid already forgot) before dropping it locally,
+  // so a failed revoke never leaves a billed Item we can no longer reach.
+  const disconnect = async (userId, itemId) => {
+    const accessToken = await store.getAccessToken(userId, itemId);
+    try { await plaid.remove(accessToken); } catch (error) { if (!ALREADY_REMOVED.has(error.code)) throw error; }
+    await store.removeItem(userId, itemId);
+  };
   return http.createServer(async (req, res) => {
     try {
       const { pathname } = new URL(req.url || '/', 'http://localhost');
       if (req.method === 'GET' && pathname === '/health') return json(res, 200, { ok: true, plaidEnvironment: config.plaidEnv, credentialsConfigured: Boolean(config.plaidClientId && config.plaidSecret) });
+      if (req.method === 'POST' && pathname === '/v1/auth/apple') {
+        if (!apple || !config.appleBundleId || !config.jwtSecret || config.jwtSecret.length < 32) throw httpError(503, 'Sign in with Apple is not configured');
+        const input = await body(req), identityToken = typeof input.identityToken === 'string' ? input.identityToken : '', nonce = typeof input.nonce === 'string' ? input.nonce : '';
+        if (!identityToken || identityToken.length > 4096 || !nonce || nonce.length > 128) throw httpError(400, 'identityToken and nonce are required');
+        const claims = await apple.verify(identityToken, nonce);
+        const iat = Math.floor(Date.now() / 1000), exp = iat + (config.sessionTtlDays || 30) * 86400, userId = `apple:${claims.sub}`;
+        const sessionToken = signToken({ sub: userId, ...(config.jwtIssuer ? { iss: config.jwtIssuer } : {}), ...(config.jwtAudience ? { aud: config.jwtAudience } : {}), iat, exp }, config.jwtSecret);
+        return json(res, 200, { sessionToken, expiresAt: new Date(exp * 1000).toISOString(), userId });
+      }
       const session = verifyBearerToken(req.headers.authorization, config.jwtSecret, Date.now(), { issuer: config.jwtIssuer, audience: config.jwtAudience });
       const userId = session.sub;
 
@@ -58,15 +77,29 @@ export function createApp({ config, plaid, store }) {
       const removeMatch = pathname.match(/^\/v1\/plaid\/connections\/([^/]+)$/);
       if (req.method === 'DELETE' && removeMatch) {
         let itemId; try { itemId = decodeURIComponent(removeMatch[1]); } catch { throw httpError(400, 'Invalid connection id'); }
-        const accessToken = await store.getAccessToken(userId, itemId);
-        try { await plaid.remove(accessToken); } catch (error) { if (!ALREADY_REMOVED.has(error.code)) throw error; }
-        await store.removeItem(userId, itemId);
+        await disconnect(userId, itemId);
         return json(res, 200, { disconnected: true });
+      }
+      if (req.method === 'DELETE' && pathname === '/v1/account') {
+        // Items are revoked one by one; a non-recoverable Plaid failure stops here so the rest stay
+        // reachable and the client can retry. The user record goes only once no Items remain.
+        for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId);
+        await store.deleteUser(userId);
+        return json(res, 200, { deleted: true });
+      }
+      if (req.method === 'POST' && pathname === '/v1/ask') {
+        if (!assistant) throw httpError(503, "Ask Margin isn't configured");
+        const input = await body(req), question = typeof input.question === 'string' ? input.question.trim() : '', context = input.context;
+        if (!question || question.length > 500) throw httpError(400, 'question must be 1-500 characters');
+        if (!isPlainObject(context) || JSON.stringify(context).length > 8000) throw httpError(400, 'context must be an object of at most 8000 characters');
+        if (!askLimiter.take(userId)) throw httpError(429, 'Daily question limit reached');
+        return json(res, 200, { answer: await assistant.answer({ question, context }) });
       }
       return json(res, 404, { error: 'Not found' });
     } catch (error) {
       const status = Number(error.status) || 500;
-      const safeMessage = status >= 500 && status !== 503 ? 'Bank service temporarily unavailable' : error.message;
+      // Only our own fixed messages (expose) may describe a 5xx; anything else could leak upstream detail.
+      const safeMessage = status >= 500 && status !== 503 && !error.expose ? 'Bank service temporarily unavailable' : error.message;
       return json(res, status, { error: safeMessage, code: error.code || undefined });
     }
   });

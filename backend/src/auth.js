@@ -25,9 +25,11 @@ export function verifyBearerToken(header, secret, now = Date.now(), claims = {})
   return payload;
 }
 
-export function signTestToken(payload, secret) {
+// Mints an HS256 session JWT in exactly the shape verifyBearerToken accepts.
+export function signToken(payload, secret) {
   const head = encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = encode(JSON.stringify(payload));
   const sig = crypto.createHmac('sha256', secret).update(`${head}.${body}`).digest('base64url');
   return `${head}.${body}.${sig}`;
 }
+export const signTestToken = signToken;
