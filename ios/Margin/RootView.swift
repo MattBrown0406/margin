@@ -339,7 +339,7 @@ struct RecordNetTransferView: View {
             guard let value = Double(moneyInput: amount) else { return }
             context.insert(Transaction(title: grossEntry.title, amount: value, date: date, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: grossEntry.jobID)); try? context.save(); dismiss()
         }.frame(maxWidth: .infinity).bold().disabled(existing == nil && Double(moneyInput: amount) == nil) }
-    }.navigationTitle("Record Net").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
+    }.numberPadDone().navigationTitle("Record Net").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 }
 
 struct PlanSummary: View {
@@ -366,7 +366,7 @@ struct BudgetLineRow: View {
                 Section { TextField("Balance", value: $category.fundBalance, format: .number).keyboardType(.decimalPad); TextField("Target", value: $category.fundTarget, format: .number).keyboardType(.decimalPad) }
                     header: { Text("Fund") } footer: { Text("Update the balance when you move money into this fund or spend from it.") }
             }
-        }.navigationTitle(category.name).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } } }
+        }.numberPadDone().navigationTitle(category.name).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } } }
             // Swiping the sheet away skips Done, so clean up and save here. Negative amounts would corrupt every total.
             .onDisappear {
                 category.monthlyLimit = max(0, category.monthlyLimit); category.fundBalance = max(0, category.fundBalance); category.fundTarget = max(0, category.fundTarget)
@@ -392,7 +392,7 @@ struct ActivityView: View {
             Picker("Ledger", selection: $scope) { Text("All").tag("all"); Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented).listRowBackground(Color.clear)
             ForEach(filtered) { TransactionRow(tx: $0).listRowBackground(Color.clear) }
                 .onDelete(perform: delete)
-        }.scrollContentBackground(.hidden).background(Color.marginCream).navigationTitle("Activity").searchable(text: $search, prompt: "Search entries")
+        }.scrollContentBackground(.hidden).background(Color.marginCream).numberPadDone().navigationTitle("Activity").searchable(text: $search, prompt: "Search entries")
     }
     /// Deleting a bank import also skips it, so the next sync doesn't offer it again.
     private func delete(at offsets: IndexSet) {
@@ -513,7 +513,7 @@ struct GoalEditView: View {
     var body: some View { NavigationStack { Form {
         Section { TextField("Amount to add", text: $added).keyboardType(.decimalPad) } header: { Text("Add money") } footer: { Text("What you just moved into savings for \(goal.name).") }
         Section("Totals") { LabeledContent("Saved so far") { TextField("0", text: $saved).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }; LabeledContent("Target") { TextField("Target", text: $target).keyboardType(.decimalPad).multilineTextAlignment(.trailing) } }
-    }.navigationTitle(goal.name).onAppear { saved = String(format: "%.2f", goal.saved); target = String(format: "%.2f", goal.target) }
+    }.numberPadDone().navigationTitle(goal.name).onAppear { saved = String(format: "%.2f", goal.saved); target = String(format: "%.2f", goal.target) }
      .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!canSave) }
@@ -578,7 +578,7 @@ struct AddEntryView: View {
             Section("Net transfer — optional") { Text("Leave this blank if the money has not moved into your personal account yet.").font(.caption).foregroundStyle(.secondary); TextField("Amount transferred personal", text: $net).keyboardType(.decimalPad); DatePicker("Transfer date", selection: $netDate, displayedComponents: .date) }
         }
         Section { Button("Save entry") { saveEntry() }.frame(maxWidth: .infinity).bold().disabled(!canSave) }
-    }.navigationTitle(type == 0 ? "Add expense" : "Log intervention income").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+    }.numberPadDone().navigationTitle(type == 0 ? "Add expense" : "Log intervention income").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         .onAppear(perform: resetCategoryIfNeeded).onChange(of: scope) { resetCategoryIfNeeded() }
     } }
     /// Keeps the category valid for the chosen ledger, so a business expense can't be saved as "Groceries".

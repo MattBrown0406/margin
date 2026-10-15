@@ -169,7 +169,7 @@ struct BookJobView: View {
             Text(netRate.map { "Pre-filled at \(Int(($0 * 100).rounded()))% of Gross, what has reached your personal account over the last year." } ?? "Pre-filled at 60% of Gross until Margin learns your usual transfer.")
         }
         Section { Button("Book job") { save() }.frame(maxWidth: .infinity).bold().disabled(!canSave) }
-    }.navigationTitle("Book a job").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
+    }.numberPadDone().navigationTitle("Book a job").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 
     private func save() {
         guard let grossValue = Double(moneyInput: gross) else { return }
@@ -204,7 +204,7 @@ struct MarkJobPaidView: View {
             header: { Text("Net transfer — optional") } footer: { Text("Leave blank until money actually moves to your personal account.") }
         }
         Section { Button(existingJobID == nil ? "Record payment" : "Link payment") { save() }.frame(maxWidth: .infinity).bold().disabled(!canSave) }
-    }.navigationTitle(job.title).onAppear { gross = String(format: "%.2f", job.expectedGross) }
+    }.numberPadDone().navigationTitle(job.title).onAppear { gross = String(format: "%.2f", job.expectedGross) }
      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 
     private func save() {

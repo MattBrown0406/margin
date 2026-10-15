@@ -75,7 +75,7 @@ struct AffordView: View {
                 }
             } header: { Text("Ask Margin") } footer: { Text("Sends a summary of your budget totals, never your transactions, to Margin’s assistant.") }
         }
-    }.navigationTitle("Can I afford it?")
+    }.numberPadDone().navigationTitle("Can I afford it?")
      .onChange(of: amount) { answer = nil; askError = nil }.onChange(of: monthOffset) { answer = nil; askError = nil }.onChange(of: what) { answer = nil; askError = nil }
      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } } } }
 

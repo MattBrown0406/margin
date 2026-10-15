@@ -16,3 +16,19 @@ struct CardModifier: ViewModifier {
 }
 
 extension View { func marginCard() -> some View { modifier(CardModifier()) } }
+
+extension View {
+    /// Number pads have no Return key, so a screen with amount fields gets a Done button above the keyboard, and
+    /// scrolling dismisses it. Without this the keyboard can cover the screen's own buttons with no way to close it.
+    func numberPadDone() -> some View {
+        scrollDismissesKeyboard(.interactively)
+            .toolbar {
+                // Any keyboard toolbar makes SwiftUI (iOS 27) log "Invalid frame dimension" once as the keyboard appears;
+                // it's internal to the toolbar's layout and harmless (checked in the simulator).
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }.bold()
+                }
+            }
+    }
+}

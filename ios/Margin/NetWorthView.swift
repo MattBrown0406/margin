@@ -38,11 +38,14 @@ struct NetWorthView: View {
                 }.padding(.vertical, 4)
                 HStack { ReportMetric(label: "OWN", value: assetsTotal); ReportMetric(label: "OWE", value: debtsTotal) }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             }
-            if snapshots.count > 1 {
+            // Plain values read here, in the body: a Chart reading the stored snapshots inside its own closure isn't
+            // tracked by SwiftUI, so an updated snapshot (this month's, after an edit) would leave a stale point.
+            let trend = snapshots.suffix(24).map { (month: $0.monthStart, value: $0.netWorth) }
+            if trend.count > 1 {
                 Section("Trend") {
-                    Chart(snapshots.suffix(24)) { snapshot in
-                        LineMark(x: .value("Month", snapshot.monthStart, unit: .month), y: .value("Net worth", snapshot.netWorth))
-                        PointMark(x: .value("Month", snapshot.monthStart, unit: .month), y: .value("Net worth", snapshot.netWorth))
+                    Chart(trend, id: \.month) { point in
+                        LineMark(x: .value("Month", point.month, unit: .month), y: .value("Net worth", point.value))
+                        PointMark(x: .value("Month", point.month, unit: .month), y: .value("Net worth", point.value))
                     }.foregroundStyle(Color.marginInk).frame(height: 160)
                 }
             }
@@ -77,7 +80,7 @@ struct NetWorthView: View {
             } header: { Text("Owe") }
             if let error = bank.errorMessage { Section { Text(error).font(.caption).foregroundStyle(.secondary) } }
         }
-        .navigationTitle("Net worth")
+        .numberPadDone().navigationTitle("Net worth")
         .task {
             await bank.load()
             // Without a working bank connection, connected balances are unknown: show what's known but don't record it
@@ -159,7 +162,7 @@ private struct AssetEditView: View {
         TextField("Name (e.g. Savings, 401(k), Home)", text: $name)
         Picker("Type", selection: $kind) { Text("Cash & savings").tag("cash"); Text("Investments & retirement").tag("investment"); Text("Home or property").tag("property"); Text("Vehicle").tag("vehicle"); Text("Other").tag("other") }
         LabeledContent("Value") { TextField("0", text: $value).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
-    }.navigationTitle(asset == nil ? "Add asset" : asset!.name)
+    }.numberPadDone().navigationTitle(asset == nil ? "Add asset" : asset!.name)
      .onAppear { if let asset { name = asset.name; kind = asset.kind; value = String(format: "%.2f", asset.value) } }
      .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

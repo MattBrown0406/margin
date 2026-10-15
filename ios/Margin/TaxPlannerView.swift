@@ -10,14 +10,17 @@ struct TaxPlannerView: View {
     @Query private var settingsList: [FinanceSettings]
     @Query(sort: \EstimatedTaxPayment.date, order: .reverse) private var payments: [EstimatedTaxPayment]
     @Query private var allocations: [NetAllocation]
+    /// Set by "Record a payment". The sheet hangs off the Form: a sheet attached inside a Form section never presents.
+    @State private var paymentDraft: TaxPaymentDraft?
 
     var body: some View {
         Form {
             if let settings = FinanceSettings.pick(settingsList) {
-                TaxPlanSections(settings: settings, transactions: transactions, categories: categories, payments: payments, allocations: allocations)
+                TaxPlanSections(settings: settings, transactions: transactions, categories: categories, payments: payments, allocations: allocations, paymentDraft: $paymentDraft)
             }
         }
-        .navigationTitle("Taxes")
+        .sheet(item: $paymentDraft) { RecordTaxPaymentView(reserve: $0.reserve, suggestedFederal: $0.federal, suggestedState: $0.state, year: $0.year) }
+        .numberPadDone().navigationTitle("Taxes")
         .task { _ = FinanceSettings.current(in: context) }
     }
 }
@@ -26,7 +29,7 @@ private struct TaxPlanSections: View {
     @Environment(\.modelContext) private var context
     @Bindable var settings: FinanceSettings
     let transactions: [Transaction]; let categories: [BudgetCategory]; let payments: [EstimatedTaxPayment]; let allocations: [NetAllocation]
-    @State private var recording = false
+    @Binding var paymentDraft: TaxPaymentDraft?
 
     /// The tax year being paid: last year's until its January installment is due, then this year's.
     private var year: Int {
@@ -59,9 +62,8 @@ private struct TaxPlanSections: View {
                 LabeledContent("Q\(next.quarter) due \(next.dueDate.formatted(date: .abbreviated, time: .omitted))", value: (plan.dueNextFederal + plan.dueNextState).money).bold()
                 if plan.dueNextState > 0 { Text("\(plan.dueNextFederal.money) to the IRS · \(plan.dueNextState.money) to your state").font(.caption).foregroundStyle(.secondary) }
             }
-            Button { recording = true } label: { Label("Record a payment", systemImage: "checkmark.circle") }
+            Button { paymentDraft = TaxPaymentDraft(reserve: reserve, federal: plan.dueNextFederal, state: plan.dueNextState, year: year) } label: { Label("Record a payment", systemImage: "checkmark.circle") }
         }
-        .sheet(isPresented: $recording) { RecordTaxPaymentView(reserve: reserve, suggestedFederal: plan.dueNextFederal, suggestedState: plan.dueNextState, year: year) }
 
         Section {
             LabeledContent("Profit so far", value: plan.ytdProfit.money)
@@ -132,6 +134,12 @@ private struct TaxPlanSections: View {
     }
 }
 
+/// What the payment sheet starts from.
+struct TaxPaymentDraft: Identifiable {
+    let id = UUID()
+    let reserve: Double, federal: Double, state: Double, year: Int
+}
+
 private struct RecordTaxPaymentView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
     let reserve: Double; let suggestedFederal: Double; let suggestedState: Double; let year: Int
@@ -147,7 +155,7 @@ private struct RecordTaxPaymentView: View {
             Toggle("Paid from the tax reserve", isOn: $fromReserve)
         } footer: { Text("A January payment is usually the last installment for the year before.") }
         Section { Button("Record payment") { save() }.bold().frame(maxWidth: .infinity).disabled(Double(moneyInput: amount) == nil) }
-    }.navigationTitle("Tax payment")
+    }.numberPadDone().navigationTitle("Tax payment")
      .onAppear { taxYear = year; let due = isState ? suggestedState : suggestedFederal; if due > 0 { amount = String(format: "%.2f", due) } }
      .onChange(of: isState) { let due = isState ? suggestedState : suggestedFederal; amount = due > 0 ? String(format: "%.2f", due) : "" }
      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }

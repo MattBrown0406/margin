@@ -139,7 +139,10 @@ struct RolloverCard: View {
         if let settings, amount >= 1, !funds.isEmpty, settings.lastRolloverMonthKey < previousKey {
             VStack(alignment: .leading, spacing: 10) {
                 Label("\(previousMonth.formatted(.dateTime.month(.wide))) left \(amount.money) unspent", systemImage: "arrow.uturn.right.circle.fill").font(.headline)
-                Picker("Move it to", selection: $fundName) { ForEach(funds, id: \.self) { Text($0).tag($0) } }
+                // Always a real fund (the state starts empty until onAppear picks one).
+                Picker("Move it to", selection: Binding(get: { funds.contains(fundName) ? fundName : (funds.contains(settings.surplusTarget) ? settings.surplusTarget : funds[0]) }, set: { fundName = $0 })) {
+                    ForEach(funds, id: \.self) { Text($0).tag($0) }
+                }
                 HStack {
                     Button("Move \(amount.money)") {
                         let target = funds.contains(fundName) ? fundName : funds[0]
@@ -248,7 +251,7 @@ struct AssignNetView: View {
                 }
             }
         }
-        .navigationTitle("Assign Net")
+        .numberPadDone().navigationTitle("Assign Net")
         .task { _ = FinanceSettings.current(in: context) }
     }
 
@@ -292,7 +295,7 @@ struct SteadyPaycheckView: View {
         Form {
             if let settings = FinanceSettings.pick(settingsList) { SteadyPaycheckForm(settings: settings, facts: MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs)) }
         }
-        .navigationTitle("Steady paycheck")
+        .numberPadDone().navigationTitle("Steady paycheck")
         .task { _ = FinanceSettings.current(in: context) }
     }
 }

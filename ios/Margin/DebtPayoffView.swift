@@ -13,7 +13,7 @@ struct DebtPayoffView: View {
         Group {
             if let settings = FinanceSettings.pick(settingsList) { DebtPayoffList(settings: settings, debts: debts) } else { ProgressView() }
         }
-        .navigationTitle("Debt payoff")
+        .numberPadDone().navigationTitle("Debt payoff")
         .task { _ = FinanceSettings.current(in: context) }
     }
 }
@@ -258,7 +258,7 @@ private struct DebtEditView: View {
             LabeledContent("Minimum payment") { TextField("0", text: $minimum).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
         } footer: { Text("Find these on your latest statement. Use the purchase APR for cards.") }
         if debt != nil { Section { Button("Delete debt", role: .destructive) { confirmDelete = true } } }
-    }.navigationTitle(debt == nil ? "Add debt" : "Edit debt")
+    }.numberPadDone().navigationTitle(debt == nil ? "Add debt" : "Edit debt")
      .onAppear {
         guard let debt else { return }
         name = debt.name; kind = debt.kind; balance = String(format: "%.2f", debt.balance)
@@ -306,7 +306,7 @@ private struct DebtPaymentView: View {
             Section { Label("The balance follows your bank, so recording this only tells the plan this month’s payment is made. The balance updates when the bank posts it.", systemImage: "building.columns").font(.caption) }
         }
         Section { Button("Record payment") { save() }.bold().frame(maxWidth: .infinity).disabled(Double(moneyInput: amount) == nil) }
-    }.navigationTitle(debt.name)
+    }.numberPadDone().navigationTitle(debt.name)
      .onAppear { let value = suggested > 0.005 ? suggested : min(debt.balance, debt.minimumPayment); amount = value > 0 ? String(format: "%.2f", value) : "" }
      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 
