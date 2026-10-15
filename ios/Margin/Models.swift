@@ -295,7 +295,7 @@ enum StarterBudget {
         countTowardMonth(amount, on: date, now: now)
         balance = max(0, ((balance - amount) * 100).rounded() / 100)
     }
-    /// A payment that already shows in the balance (a bank-linked debt whose balance dropped): counts toward this month only.
+    /// A payment on a bank-linked debt, whose balance comes from the bank: counts toward this month only.
     func countTowardMonth(_ amount: Double, on date: Date, now: Date = .now) {
         let calendar = Calendar.current
         (paidMonthKey, paidThisMonth) = DebtPayoff.tally(month: paidMonthKey, paid: paidThisMonth, adding: amount,

@@ -107,8 +107,7 @@ struct NetWorthView: View {
         var changed = false
         for debt in debts {
             guard let id = debt.linkedAccountID, let balance = byID[id]?.currentBalance, abs(balance - debt.balance) > 0.005 else { continue }
-            // A drop is a payment the bank posted: it counts toward this month so the plan doesn't ask for it again.
-            if balance < debt.balance { debt.countTowardMonth(debt.balance - max(0, balance), on: .now) }
+            // Only the balance: a drop could be a refund or a transfer, so payments are recorded in Debt payoff.
             debt.balance = max(0, balance); changed = true
         }
         if changed { try? context.save() }

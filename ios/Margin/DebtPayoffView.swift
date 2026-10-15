@@ -84,7 +84,7 @@ private struct DebtPayoffList: View {
                     ForEach(Array(ordered.enumerated()), id: \.element.id) { index, debt in
                         let outcome = plan.outcomes.first { $0.id == debt.id }
                         // The debt getting the extra: this month's, or next month's once this month is already paid.
-                        Button { editing = debt } label: { DebtRow(debt: debt, position: index + 1, outcome: outcome, isFocus: plan.months.first(where: { $0.focus != nil })?.focus == debt.id) }
+                        Button { editing = debt } label: { DebtRow(debt: debt, position: index + 1, outcome: outcome, isFocus: plan.months.prefix(2).first(where: { $0.focus != nil })?.focus == debt.id) }
                             .buttonStyle(.plain)
                             .swipeActions { Button("Payment") { paying = debt }.tint(.marginInk) }
                             .contextMenu { Button("Record a payment") { paying = debt } }
@@ -135,10 +135,11 @@ private struct DebtPayoffList: View {
         }
         .sheet(isPresented: $adding) { DebtEditView(debt: nil, nextRank: (debts.map(\.customRank).max() ?? -1) + 1) {} }
         // Changing a balance, rate, or minimum re-sets the strategy's order (payments never do).
-        .sheet(item: $editing) { DebtEditView(debt: $0, nextRank: 0) { settings.debtOrderKey = "" } }
+        .sheet(item: $editing) { DebtEditView(debt: $0, nextRank: 0) { settings.debtOrderKey = ""; lockOrder() } }
         .sheet(item: $paying) { debt in DebtPaymentView(debt: debt, planLine: planLine, suggested: comparison.plan.months.first?.payments[debt.id] ?? 0) }
         .task { lockOrder() }
         .onChange(of: orderKey) { lockOrder() }
+        .onChange(of: settings.debtOrderKey) { lockOrder() }   // cleared elsewhere (linking a debt to the bank)
     }
 
     @ViewBuilder private func summary(_ comparison: DebtPayoff.Comparison) -> some View {
@@ -295,21 +296,24 @@ private struct DebtPaymentView: View {
         Section {
             LabeledContent("Balance", value: debt.balance.moneyExact)
             TextField("Payment amount", text: $amount).keyboardType(.decimalPad)
-            DatePicker("Date", selection: $date, displayedComponents: .date)
+            DatePicker("Date", selection: $date, in: ...Date(), displayedComponents: .date)
             if let planLine { Toggle("Also log it under \(planLine.name)", isOn: $recordExpense) }
-        } footer: { Text(suggested > 0.005 ? "Your plan has \(suggested.moneyExact) going to this debt for the rest of this month. Recording it lowers the balance; if interest was charged, edit the balance to match your statement." : "Your plan has nothing more due on this debt this month. Recording a payment lowers the balance.") }
-        if debt.linkedAccountID != nil {
-            Section { Label("This debt follows your bank balance. Payments count here once the bank posts them (open Net worth to refresh), so they’re never counted twice.", systemImage: "building.columns").font(.subheadline) }
-        } else {
-            Section { Button("Record payment") { save() }.bold().frame(maxWidth: .infinity).disabled(Double(moneyInput: amount) == nil) }
+        } footer: {
+            let plan = suggested > 0.005 ? "Your plan has \(suggested.moneyExact) going to this debt for the rest of this month." : "Your plan has nothing more due on this debt this month."
+            Text(debt.linkedAccountID != nil ? plan : plan + " Recording a payment lowers the balance; if interest was charged, edit the balance to match your statement.")
         }
+        if debt.linkedAccountID != nil {
+            Section { Label("The balance follows your bank, so recording this only tells the plan this month’s payment is made. The balance updates when the bank posts it.", systemImage: "building.columns").font(.caption) }
+        }
+        Section { Button("Record payment") { save() }.bold().frame(maxWidth: .infinity).disabled(Double(moneyInput: amount) == nil) }
     }.navigationTitle(debt.name)
      .onAppear { let value = suggested > 0.005 ? suggested : min(debt.balance, debt.minimumPayment); amount = value > 0 ? String(format: "%.2f", value) : "" }
      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 
     private func save() {
         guard let value = Double(moneyInput: amount) else { return }
-        debt.recordPayment(value, on: date)
+        // A bank-linked balance comes from the bank; the payment only counts toward this month here.
+        if debt.linkedAccountID != nil { debt.countTowardMonth(value, on: date) } else { debt.recordPayment(value, on: date) }
         if recordExpense, let planLine { context.insert(Transaction(title: "Payment: \(debt.name)", amount: value, date: date, category: planLine.name, ledgerScope: "personal")) }
         try? context.save(); dismiss()
     }
