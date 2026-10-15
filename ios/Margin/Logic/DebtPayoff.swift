@@ -34,7 +34,7 @@ enum PayoffStrategy: String, CaseIterable, Identifiable {
         switch self {
         case .snowball: "Quick wins: each paid-off debt frees its payment for the next one sooner. Also called the debt snowball."
         case .avalanche: "Usually pays the least interest overall. Also called the debt avalanche."
-        case .interestCost: "Targets the debt costing the most dollars of interest each month right now."
+        case .interestCost: "Targets the debt costing the most dollars of interest each month."
         case .cashFlow: "Pays off the debt with the lowest balance relative to its minimum payment first, freeing monthly cash fastest."
         case .custom: "You choose the order. Drag debts in the list to change it."
         }
@@ -124,7 +124,10 @@ enum DebtPayoff {
                 let interest = cents(balance[debt.id, default: 0] * debt.apr / 100 / 12)
                 balance[debt.id, default: 0] += interest; interestPaid[debt.id, default: 0] += interest; monthInterest += interest
             }
-            var available = index == 1 ? max(0, cents(budget - paidAlready)) : budget
+            // Month 1 leaves out what's already been paid this month — but never less than the minimums still owed,
+            // however big a payment elsewhere was.
+            let minimumsLeft = active.reduce(0) { $0 + min(balance[$1.id, default: 0], max(0, $1.minimumPayment - (index == 1 ? $1.paidThisMonth : 0))) }
+            var available = index == 1 ? max(cents(budget - paidAlready), cents(minimumsLeft)) : budget
             for debt in active where balance[debt.id, default: 0] > 0 {
                 let minimum = index == 1 ? max(0, debt.minimumPayment - debt.paidThisMonth) : debt.minimumPayment
                 let pay = cents(min(max(0, minimum), balance[debt.id, default: 0], available))
@@ -162,6 +165,13 @@ enum DebtPayoff {
             guard let base = minimumsOnly.monthsToDebtFree, let fast = plan.monthsToDebtFree else { return nil }
             return max(0, base - fast)
         }
+    }
+
+    /// This month's running total of payments on a debt after one more payment: a payment dated in another month
+    /// doesn't count toward this month (and doesn't wipe it); a total from an earlier month starts over.
+    static func tally(month: String, paid: Double, adding amount: Double, paymentMonth: String, currentMonth: String) -> (month: String, paid: Double) {
+        let base = month == currentMonth ? paid : 0
+        return (currentMonth, base + (paymentMonth == currentMonth ? max(0, amount) : 0))
     }
 
     static func compare(_ debts: [DebtInfo], strategy: PayoffStrategy, extra: Double) -> Comparison {

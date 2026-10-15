@@ -213,6 +213,8 @@ enum StarterBudget {
     /// (which changes balances and interest) never reshuffles which one comes first. `debtOrderKey` says what it's for.
     var debtOrderIDs: [String] = []
     var debtOrderKey: String = ""
+    /// The person has set (or been given) their own order, so switching back to it keeps it.
+    var hasCustomDebtOrder: Bool = false
     /// Assigning Net: where money goes once the plan is covered (a fund or goal name; empty = leave it unassigned).
     var surplusTarget: String = ""
     /// The last month ("2026-09") whose leftover flexible money was offered for a fund.
@@ -250,6 +252,7 @@ enum StarterBudget {
         if debtStrategy == PayoffStrategy.snowball.rawValue { debtStrategy = other.debtStrategy }
         if extraDebtPayment == 0 { extraDebtPayment = other.extraDebtPayment }
         if debtOrderKey.isEmpty { debtOrderKey = other.debtOrderKey; debtOrderIDs = other.debtOrderIDs }
+        hasCustomDebtOrder = hasCustomDebtOrder || other.hasCustomDebtOrder
         if surplusTarget.isEmpty { surplusTarget = other.surplusTarget }
         lastRolloverMonthKey = max(lastRolloverMonthKey, other.lastRolloverMonthKey)
         ignoredRecurringKeys = Array(Set(ignoredRecurringKeys + other.ignoredRecurringKeys)).sorted()
@@ -287,12 +290,16 @@ enum StarterBudget {
         DebtInfo(id: id, name: name, balance: balance, apr: apr, minimumPayment: minimumPayment, customRank: customRank,
                  paidThisMonth: paidMonthKey == Calendar.current.monthKey(for: .now) ? paidThisMonth : 0)
     }
-    /// Records a payment made this month.
-    func recordPayment(_ amount: Double, now: Date = .now) {
-        let key = Calendar.current.monthKey(for: now)
-        if paidMonthKey != key { paidMonthKey = key; paidThisMonth = 0 }
-        paidThisMonth += amount
+    /// Records a payment made on `date`: it lowers the balance and, if it's this month's, counts toward this month.
+    func recordPayment(_ amount: Double, on date: Date, now: Date = .now) {
+        countTowardMonth(amount, on: date, now: now)
         balance = max(0, ((balance - amount) * 100).rounded() / 100)
+    }
+    /// A payment that already shows in the balance (a bank-linked debt whose balance dropped): counts toward this month only.
+    func countTowardMonth(_ amount: Double, on date: Date, now: Date = .now) {
+        let calendar = Calendar.current
+        (paidMonthKey, paidThisMonth) = DebtPayoff.tally(month: paidMonthKey, paid: paidThisMonth, adding: amount,
+                                                         paymentMonth: calendar.monthKey(for: date), currentMonth: calendar.monthKey(for: now))
     }
 }
 

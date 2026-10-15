@@ -93,6 +93,29 @@ private func near(_ a: Double, _ b: Double, _ tolerance: Double = 0.01) -> Bool 
         #expect(DebtPayoff.plan([half], strategy: .snowball, extra: 200).months.first?.payments[half.id] == 150)
     }
 
+    @Test func aBigPaymentElsewhereNeverSkipsAnotherDebtsMinimum() {
+        // A was paid off this month with a $3,000 windfall; B's $150 minimum is still due.
+        var a = debt("A", 0, apr: 0, min: 100); a.paidThisMonth = 3000
+        let b = debt("B", 2000, apr: 0, min: 150)
+        let c = DebtPayoff.compare([a, b], strategy: .snowball, extra: 0)
+        #expect(c.plan.months.first?.payments[b.id] == 150)
+        #expect(c.plan.monthlyBudget == 250)                   // A's $100 keeps rolling to B from next month
+        #expect(c.plan.months[1].payments[b.id] == 250)
+        var f = debt("F", 1000, apr: 0, min: 100); f.paidThisMonth = 300
+        let g = debt("G", 1000, apr: 0, min: 100)
+        #expect(c.minimumsOnly.months.first?.payments[b.id] == 150)
+        #expect(DebtPayoff.compare([f, g], strategy: .snowball, extra: 0).minimumsOnly.months.first?.payments[g.id] == 100)
+    }
+
+    @Test func thisMonthsTallyIgnoresPaymentsDatedInOtherMonths() {
+        var t = DebtPayoff.tally(month: "", paid: 0, adding: 300, paymentMonth: "2026-10", currentMonth: "2026-10")
+        #expect(t == ("2026-10", 300))
+        t = DebtPayoff.tally(month: t.month, paid: t.paid, adding: 120, paymentMonth: "2026-09", currentMonth: "2026-10")
+        #expect(t == ("2026-10", 300))                          // a forgotten September payment doesn't wipe October's
+        t = DebtPayoff.tally(month: t.month, paid: t.paid, adding: 50, paymentMonth: "2026-11", currentMonth: "2026-11")
+        #expect(t == ("2026-11", 50))                           // a new month starts over
+    }
+
     @Test func noDebtsMeansNothingToPlan() {
         let plan = DebtPayoff.plan([debt("Paid", 0, apr: 20, min: 50)], strategy: .snowball, extra: 100)
         #expect(plan.monthsToDebtFree == 0)

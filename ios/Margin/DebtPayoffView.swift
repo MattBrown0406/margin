@@ -83,7 +83,8 @@ private struct DebtPayoffList: View {
                 Section {
                     ForEach(Array(ordered.enumerated()), id: \.element.id) { index, debt in
                         let outcome = plan.outcomes.first { $0.id == debt.id }
-                        Button { editing = debt } label: { DebtRow(debt: debt, position: index + 1, outcome: outcome, isFocus: plan.months.first?.focus == debt.id) }
+                        // The debt getting the extra: this month's, or next month's once this month is already paid.
+                        Button { editing = debt } label: { DebtRow(debt: debt, position: index + 1, outcome: outcome, isFocus: plan.months.first(where: { $0.focus != nil })?.focus == debt.id) }
                             .buttonStyle(.plain)
                             .swipeActions { Button("Payment") { paying = debt }.tint(.marginInk) }
                             .contextMenu { Button("Record a payment") { paying = debt } }
@@ -91,7 +92,8 @@ private struct DebtPayoffList: View {
                     .onMove(perform: settings.strategy == .custom ? move : nil)
                 } header: {
                     HStack { Text("Payoff order"); Spacer(); if settings.strategy == .custom { EditButton().font(.caption.bold()) } }
-                } footer: { Text("Tap a debt to edit it; swipe to record a payment. Month 1 is this month.") }
+                } footer: { Text(settings.strategy == .custom ? "Tap a debt to edit it; swipe to record a payment. Month 1 is this month."
+                                  : "The order is set when you choose a strategy or add a debt, so paying debts down never reshuffles it. Tap a debt to edit it; swipe to record a payment. Month 1 is this month.") }
 
                 if !plan.minimumBelowInterest.isEmpty {
                     Section { Label("\(plan.minimumBelowInterest.joined(separator: ", ")): the minimum doesn’t cover the interest, so the balance grows unless extra money reaches it.", systemImage: "exclamationmark.triangle.fill").font(.subheadline).foregroundStyle(Color.marginCoral) }
@@ -103,7 +105,8 @@ private struct DebtPayoffList: View {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(payoffDate(month.index).formatted(.dateTime.month(.abbreviated).year())).font(.subheadline.bold())
-                                    Text(month.focus.flatMap { id in debts.first { $0.id == id }?.name }.map { "Extra to \($0)" } ?? "Minimums").font(.caption).foregroundStyle(.secondary)
+                                    Text(month.focus.flatMap { id in debts.first { $0.id == id }?.name }.map { "Extra to \($0)" }
+                                         ?? (month.payments.values.reduce(0, +) < 0.005 ? "Already paid" : "Minimums")).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 VStack(alignment: .trailing) { Text(month.payments.values.reduce(0, +).money).font(.subheadline.bold()); Text("\(month.remainingBalance.money) left").font(.caption).foregroundStyle(.secondary) }
@@ -130,8 +133,9 @@ private struct DebtPayoffList: View {
                 } header: { Text("Paid off") } footer: { Text("A paid-off debt’s payment keeps going to the debts still owed. Delete it here to stop that.") }
             }
         }
-        .sheet(isPresented: $adding) { DebtEditView(debt: nil, nextRank: (debts.map(\.customRank).max() ?? -1) + 1) }
-        .sheet(item: $editing) { DebtEditView(debt: $0, nextRank: 0) }
+        .sheet(isPresented: $adding) { DebtEditView(debt: nil, nextRank: (debts.map(\.customRank).max() ?? -1) + 1) {} }
+        // Changing a balance, rate, or minimum re-sets the strategy's order (payments never do).
+        .sheet(item: $editing) { DebtEditView(debt: $0, nextRank: 0) { settings.debtOrderKey = "" } }
         .sheet(item: $paying) { debt in DebtPaymentView(debt: debt, planLine: planLine, suggested: comparison.plan.months.first?.payments[debt.id] ?? 0) }
         .task { lockOrder() }
         .onChange(of: orderKey) { lockOrder() }
@@ -178,17 +182,22 @@ private struct DebtPayoffList: View {
     private func choose(_ strategy: PayoffStrategy) {
         // Starting a custom order from the order on screen, so nothing jumps — but only the first time: an order the
         // person already dragged into place is kept when they switch back to it.
-        if strategy == .custom, settings.strategy != .custom, Set(debts.map(\.customRank)).count < debts.count {
-            for (index, debt) in ordered.enumerated() { debt.customRank = index }
-            for debt in debts where debt.balance <= 0.005 { debt.customRank = ordered.count + (debts.firstIndex(of: debt) ?? 0) }
+        if strategy == .custom, settings.strategy != .custom, !settings.hasCustomDebtOrder {
+            rank(ordered)
+            settings.hasCustomDebtOrder = true
         }
         settings.debtStrategy = strategy.rawValue
         try? context.save()
     }
     private func move(from source: IndexSet, to destination: Int) {
         var list = ordered; list.move(fromOffsets: source, toOffset: destination)
-        for (index, debt) in list.enumerated() { debt.customRank = index }
+        rank(list); settings.hasCustomDebtOrder = true
         try? context.save()
+    }
+    /// Ranks unpaid debts in this order and paid-off ones after them, so no two ever share a rank.
+    private func rank(_ list: [Debt]) {
+        for (index, debt) in list.enumerated() { debt.customRank = index }
+        for (offset, debt) in debts.filter({ $0.balance <= 0.005 }).enumerated() { debt.customRank = list.count + offset }
     }
     private func putInPlan(_ amount: Double) {
         if let line = planLine { line.monthlyLimit = amount }
@@ -225,6 +234,8 @@ private struct DebtRow: View {
 private struct DebtEditView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
     let debt: Debt?; let nextRank: Int
+    /// Called when an existing debt's balance, rate, or minimum changed.
+    let onFiguresChanged: () -> Void
     @State private var name = ""; @State private var kind = "card"; @State private var balance = ""; @State private var apr = ""; @State private var minimum = ""
     @State private var confirmDelete = false
 
@@ -263,7 +274,11 @@ private struct DebtEditView: View {
     private func save() {
         guard let balanceValue = amountOrZero(balance), let rateValue = rate, let minimumValue = amountOrZero(minimum) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespaces)
-        if let debt { debt.name = trimmed; debt.kind = kind; debt.balance = balanceValue; debt.apr = rateValue; debt.minimumPayment = minimumValue }
+        if let debt {
+            let changed = abs(debt.balance - balanceValue) > 0.005 || abs(debt.apr - rateValue) > 0.0001 || abs(debt.minimumPayment - minimumValue) > 0.005
+            debt.name = trimmed; debt.kind = kind; debt.balance = balanceValue; debt.apr = rateValue; debt.minimumPayment = minimumValue
+            if changed { onFiguresChanged() }
+        }
         else { context.insert(Debt(name: trimmed, kind: kind, balance: balanceValue, apr: rateValue, minimumPayment: minimumValue, customRank: nextRank)) }
         try? context.save(); dismiss()
     }
@@ -283,14 +298,18 @@ private struct DebtPaymentView: View {
             DatePicker("Date", selection: $date, displayedComponents: .date)
             if let planLine { Toggle("Also log it under \(planLine.name)", isOn: $recordExpense) }
         } footer: { Text(suggested > 0.005 ? "Your plan has \(suggested.moneyExact) going to this debt for the rest of this month. Recording it lowers the balance; if interest was charged, edit the balance to match your statement." : "Your plan has nothing more due on this debt this month. Recording a payment lowers the balance.") }
-        Section { Button("Record payment") { save() }.bold().frame(maxWidth: .infinity).disabled(Double(moneyInput: amount) == nil) }
+        if debt.linkedAccountID != nil {
+            Section { Label("This debt follows your bank balance. Payments count here once the bank posts them (open Net worth to refresh), so they’re never counted twice.", systemImage: "building.columns").font(.subheadline) }
+        } else {
+            Section { Button("Record payment") { save() }.bold().frame(maxWidth: .infinity).disabled(Double(moneyInput: amount) == nil) }
+        }
     }.navigationTitle(debt.name)
      .onAppear { let value = suggested > 0.005 ? suggested : min(debt.balance, debt.minimumPayment); amount = value > 0 ? String(format: "%.2f", value) : "" }
      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 
     private func save() {
         guard let value = Double(moneyInput: amount) else { return }
-        debt.recordPayment(value, now: date)
+        debt.recordPayment(value, on: date)
         if recordExpense, let planLine { context.insert(Transaction(title: "Payment: \(debt.name)", amount: value, date: date, category: planLine.name, ledgerScope: "personal")) }
         try? context.save(); dismiss()
     }

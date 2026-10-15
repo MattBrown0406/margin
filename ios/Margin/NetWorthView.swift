@@ -105,12 +105,18 @@ struct NetWorthView: View {
     private func followBankBalances() {
         let byID = Dictionary(connectedAccounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var changed = false
-        for debt in debts { if let id = debt.linkedAccountID, let balance = byID[id]?.currentBalance, abs(balance - debt.balance) > 0.005 { debt.balance = max(0, balance); changed = true } }
+        for debt in debts {
+            guard let id = debt.linkedAccountID, let balance = byID[id]?.currentBalance, abs(balance - debt.balance) > 0.005 else { continue }
+            // A drop is a payment the bank posted: it counts toward this month so the plan doesn't ask for it again.
+            if balance < debt.balance { debt.countTowardMonth(debt.balance - max(0, balance), on: .now) }
+            debt.balance = max(0, balance); changed = true
+        }
         if changed { try? context.save() }
     }
     private func link(_ debt: Debt, to account: BankAccountDTO) {
         debt.linkedAccountID = account.id
         if let balance = account.currentBalance { debt.balance = max(0, balance) }
+        FinanceSettings.current(in: context).debtOrderKey = ""   // its balance may have changed: re-set the strategy's order
         try? context.save()
     }
     private func track(_ account: BankAccountDTO) {

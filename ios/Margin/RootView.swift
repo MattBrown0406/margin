@@ -181,6 +181,7 @@ struct PlanView: View {
     let transactions: [Transaction]
     let categories: [BudgetCategory]
     let bookedJobs: [BookedJob]
+    @Query private var financeSettings: [FinanceSettings]
     @State private var section = 0
     private var netIncome: Double { month.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" }.reduce(0) { $0 + $1.amount } }
     private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
@@ -228,7 +229,9 @@ struct PlanView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Upcoming personal bills").font(.title2.bold())
             Text("Due dates stay separate from everyday spending so nothing sneaks up on you.").foregroundStyle(.secondary)
-            ForEach(categories.filter { $0.dueDay != nil }.sorted { ($0.dueDay ?? 0) < ($1.dueDay ?? 0) }) { bill in
+            // The tax line and sinking funds have due days for planning, but they're set-asides, not bills.
+            let taxLine = FinanceSettings.pick(financeSettings)?.taxLineName ?? "Tax reserve"
+            ForEach(categories.filter { $0.dueDay != nil && !$0.isFund && $0.name.caseInsensitiveCompare(taxLine) != .orderedSame }.sorted { ($0.dueDay ?? 0) < ($1.dueDay ?? 0) }) { bill in
                 // Net of refunds: a credit alone (or a charge fully refunded) doesn't mean the bill was paid.
                 let paidAmount = month.filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.category == bill.name }.reduce(0) { $0 + $1.amount }
                 let paid = paidAmount > 0.005
