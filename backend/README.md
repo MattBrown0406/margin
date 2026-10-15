@@ -11,7 +11,7 @@ A small read-only Plaid backend for Margin. The iOS app never receives Plaid sec
 - Only `transactions` is requested. Transfer, payment, identity, investments, and liabilities permissions are not requested.
 - No access token, Plaid secret, or bank credential is returned to the app or written to logs.
 - When a bank login expires, sync returns 409 and the connection is flagged `requiresAttention`; `POST /v1/plaid/link-token` with `{ "itemId" }` returns an update-mode token to repair it.
-- A sync fetches at most 20 pages (10,000 changes). Beyond that it saves its progress and returns `hasMore: true`; call sync again to continue. The cursor the update began from is kept, so a `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` restart begins there, as Plaid requires. A sync that finishes after a newer one of the same Item is discarded rather than rolling the cursor back.
+- A sync fetches at most 20 pages (10,000 changes). Beyond that it saves its progress and returns `hasMore: true`; call sync again to continue. The cursor the update began from is kept, so a `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` restart begins there, as Plaid requires, and replaces whatever that unfinished update had saved. A sync that finishes after a newer one of the same Item is discarded rather than rolling the cursor back.
 - `TOKEN_ENCRYPTION_KEY` is required in every environment, and `PLAID_ENV` must be `sandbox` or `production` (Plaid retired `development`).
 
 ## Routes

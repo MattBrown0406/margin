@@ -20,10 +20,11 @@ export class PlaidClient {
   // restartCursor: when a previous call stopped at the page cap mid-update, the cursor that update began from. Plaid
   // requires a mutation-during-pagination restart from the update's first cursor, not from where we resumed.
   async syncAll(accessToken, initialCursor, restartCursor = initialCursor, maxRestarts = 3) {
-    let cursor = initialCursor;
+    // `restarted`: the result starts over from restartCursor, so anything saved earlier in this update is superseded.
+    let cursor = initialCursor, restarted = false;
     for (let attempt = 0; ; attempt++) {
-      try { return await this.syncPages(accessToken, cursor); }
-      catch (error) { if (error.code !== MUTATION_DURING_PAGINATION || attempt >= maxRestarts) throw error; cursor = restartCursor; }
+      try { return { ...(await this.syncPages(accessToken, cursor)), restarted }; }
+      catch (error) { if (error.code !== MUTATION_DURING_PAGINATION || attempt >= maxRestarts) throw error; cursor = restartCursor; restarted = true; }
     }
   }
   // Stops after MAX_PAGES with hasMore: true and the cursor reached, so a very large first sync makes progress over

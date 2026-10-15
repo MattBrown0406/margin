@@ -335,7 +335,6 @@ struct PlanSummary: View {
 
 struct BudgetLineRow: View {
     @Environment(\.modelContext) private var context
-    @Query private var goals: [SavingsGoal]
     @Bindable var category: BudgetCategory
     let transactions: [Transaction]
     @State private var editing = false
@@ -358,7 +357,8 @@ struct BudgetLineRow: View {
             .onDisappear {
                 category.monthlyLimit = max(0, category.monthlyLimit); category.fundBalance = max(0, category.fundBalance); category.fundTarget = max(0, category.fundTarget)
                 // A fund and a goal with the same name (the Peace Number) are one pot of money.
-                if category.isFund, let goal = goals.first(where: { $0.name.caseInsensitiveCompare(category.name) == .orderedSame }) { goal.saved = category.fundBalance; if category.fundTarget > 0 { goal.target = category.fundTarget } }
+                // Fetched here rather than with @Query, which would observe goals from every budget row.
+                if category.isFund, let goal = (try? context.fetch(FetchDescriptor<SavingsGoal>()))?.first(where: { $0.name.caseInsensitiveCompare(category.name) == .orderedSame }) { goal.saved = category.fundBalance; if category.fundTarget > 0 { goal.target = category.fundTarget } }
                 try? context.save()
             } } }
     }
@@ -386,15 +386,24 @@ struct ActivityView: View {
         var skipped = (try? JSONDecoder().decode([String].self, from: Data(skippedJSON.utf8))) ?? []
         skipped += removed.compactMap(\.externalID)
         if let data = try? JSONEncoder().encode(Array(Set(skipped)).sorted()), let value = String(data: data, encoding: .utf8) { skippedJSON = value }
-        // A booking goes back to booked when its Gross receipt is deleted, or its only payment (Net-only bookings);
-        // otherwise it would vanish from the forecast (a paid booking with no Gross expects nothing more).
+        // Deleting a booking's payment must not make it vanish from the forecast (a paid booking with no Gross
+        // expects nothing more):
+        // - its only payment is gone: back to booked;
+        // - its Gross is gone but Nets remain (e.g. deleting a mistyped Gross to re-enter it): back to booked for only
+        //   the Net still to come, since the remaining Nets already count as received. Settled jobs stay settled.
         let removedIDs = Set(removed.map(\.id)), removedJobIDs = Set(removed.compactMap(\.jobID))
         let removedGross = Set(removed.filter { $0.isIncome && $0.incomeKind == "gross" }.compactMap(\.jobID))
         let remaining = transactions.filter { $0.isIncome && !removedIDs.contains($0.id) }
-        let remainingPayments = Set(remaining.compactMap(\.jobID)), remainingGross = Set(remaining.filter { $0.incomeKind == "gross" }.compactMap(\.jobID))
+        let remainingGross = Set(remaining.filter { $0.incomeKind == "gross" }.compactMap(\.jobID))
         for job in bookedJobs where job.status == "paid" || job.status == "settled" {
             guard let id = job.paidJobID, removedJobIDs.contains(id) else { continue }
-            if (removedGross.contains(id) && !remainingGross.contains(id)) || !remainingPayments.contains(id) { job.status = "booked"; job.paidJobID = nil }
+            let netLeft = remaining.filter { $0.incomeKind == "net" && $0.jobID == id }.reduce(0) { $0 + $1.amount }
+            if !remaining.contains(where: { $0.jobID == id }) { job.status = "booked"; job.paidJobID = nil }
+            else if job.status == "paid", removedGross.contains(id), !remainingGross.contains(id), job.expectedNet - netLeft > 0.005 {
+                // Those Nets are already counted; they must not be matched as this booking's payment either.
+                job.expectedNet -= netLeft; job.status = "booked"; job.paidJobID = nil
+                if !job.ignoredPaymentIDs.contains(id) { job.ignoredPaymentIDs.append(id) }
+            }
         }
         removed.forEach(context.delete); try? context.save()
     }

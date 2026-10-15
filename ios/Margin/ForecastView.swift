@@ -55,7 +55,8 @@ struct ForecastView: View {
             }
             ForEach(openJobs) { job in
                 let overdue = job.expectedDate < Calendar.current.startOfDay(for: .now)
-                let uncounted = job.expectedDate < graceStart
+                // A booking whose Gross has arrived keeps counting from the receipt date (see CashFlowForecast.expectedNet).
+                let uncounted = job.expectedDate < graceStart && likely[job.id]?.isGross != true
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 3) {

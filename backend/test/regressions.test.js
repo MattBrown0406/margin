@@ -185,3 +185,17 @@ test('applySync keeps the update start while more pages remain and drops a stale
   item = (await store.getUser('apple:u')).items.item;
   assert.equal(item.cursor, 'c25'); assert.ok(!('paginationStart' in item)); assert.equal(r.hasMore, false);
 });
+
+test('a restarted update replaces what its unfinished first part saved, so a transaction removed meanwhile is gone', async () => {
+  const { FileStore } = await import('../src/store.js');
+  const { mkdtemp } = await import('node:fs/promises'); const { tmpdir } = await import('node:os'); const { join } = await import('node:path');
+  const store = new FileStore(join(await mkdtemp(join(tmpdir(), 'margin-')), 'data.json'), 'a'.repeat(64));
+  await store.saveItem('apple:u', { itemId: 'item', accessToken: 'tok', institutionName: 'Bank' }, 0);
+  const base = { modified: [], removed: [] };
+  // Part one of an update saves pending P; P then posts as T and Plaid restarts the update from null.
+  await store.applySync('apple:u', 'item', { ...base, cursor: 'c20', startCursor: null, hasMore: true, added: [tx('P', 'a'), tx('A', 'a')] });
+  const r = await store.applySync('apple:u', 'item', { ...base, cursor: 'end', startCursor: 'c20', hasMore: false, restarted: true, added: [tx('T', 'a'), tx('A', 'a')] });
+  assert.deepEqual(r.transactions.map(t => t.transaction_id).sort(), ['A', 'T']);
+  const item = (await store.getUser('apple:u')).items.item;
+  assert.ok(!('paginationIds' in item) && !('paginationStart' in item));
+});
