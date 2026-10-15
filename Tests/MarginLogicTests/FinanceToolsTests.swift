@@ -80,6 +80,19 @@ private func near(_ a: Double, _ b: Double, _ tolerance: Double = 0.01) -> Bool 
         #expect(c.plan.outcomes.map(\.name) == ["Car"])
     }
 
+    @Test func paymentsAlreadyMadeThisMonthArentPlannedAgain() {
+        // $3,000 at 24% with $100 minimum + $200 extra: 12 months. Paying this month's $300 doesn't make it 11.
+        var card = debt("Card", 3000, apr: 24, min: 100)
+        let before = DebtPayoff.plan([card], strategy: .snowball, extra: 200)
+        card.balance = 2700; card.paidThisMonth = 300
+        let after = DebtPayoff.plan([card], strategy: .snowball, extra: 200)
+        #expect(after.monthsToDebtFree == before.monthsToDebtFree)
+        #expect((after.months.first?.payments.values.reduce(0, +) ?? -1) == 0)   // nothing more due this month
+        // Half paid: only the rest of this month's $300 is planned.
+        var half = debt("Card", 2850, apr: 24, min: 100); half.paidThisMonth = 150
+        #expect(DebtPayoff.plan([half], strategy: .snowball, extra: 200).months.first?.payments[half.id] == 150)
+    }
+
     @Test func noDebtsMeansNothingToPlan() {
         let plan = DebtPayoff.plan([debt("Paid", 0, apr: 20, min: 50)], strategy: .snowball, extra: 100)
         #expect(plan.monthsToDebtFree == 0)

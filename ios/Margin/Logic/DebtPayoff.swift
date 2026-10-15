@@ -10,6 +10,8 @@ struct DebtInfo: Equatable, Identifiable {
     var minimumPayment: Double
     /// Position in the person's own order (used by `.custom`).
     var customRank: Int = 0
+    /// Already paid on it this month (recorded payments), so month 1 only plans what's left of this month's payment.
+    var paidThisMonth: Double = 0
 
     var monthlyInterest: Double { balance * apr / 100 / 12 }
 }
@@ -110,6 +112,8 @@ enum DebtPayoff {
         let active = strategy.order(debts.filter { $0.balance > 0.005 })
         let paidOffMinimums = debts.filter { $0.balance <= 0.005 }.reduce(0) { $0 + max(0, $1.minimumPayment) }
         let budget = active.isEmpty ? 0 : cents(active.reduce(0) { $0 + max(0, $1.minimumPayment) } + (rollover ? max(0, extra) + paidOffMinimums : 0))
+        // This month's payments already made (on any debt, including one just paid off) come out of month 1.
+        let paidAlready = cents(debts.reduce(0) { $0 + max(0, $1.paidThisMonth) })
         var balance = Dictionary(uniqueKeysWithValues: active.map { ($0.id, cents($0.balance)) })
         var interestPaid = [UUID: Double](), payoffMonth = [UUID: Int]()
         var months: [DebtPayoffPlan.Month] = [], totalInterest = 0.0, totalPaid = 0.0, finished: Int? = active.isEmpty ? 0 : nil
@@ -120,9 +124,10 @@ enum DebtPayoff {
                 let interest = cents(balance[debt.id, default: 0] * debt.apr / 100 / 12)
                 balance[debt.id, default: 0] += interest; interestPaid[debt.id, default: 0] += interest; monthInterest += interest
             }
-            var available = budget
+            var available = index == 1 ? max(0, cents(budget - paidAlready)) : budget
             for debt in active where balance[debt.id, default: 0] > 0 {
-                let pay = cents(min(max(0, debt.minimumPayment), balance[debt.id, default: 0], available))
+                let minimum = index == 1 ? max(0, debt.minimumPayment - debt.paidThisMonth) : debt.minimumPayment
+                let pay = cents(min(max(0, minimum), balance[debt.id, default: 0], available))
                 balance[debt.id, default: 0] = cents(balance[debt.id, default: 0] - pay); available = cents(available - pay); payments[debt.id, default: 0] += pay
             }
             var focus: UUID?

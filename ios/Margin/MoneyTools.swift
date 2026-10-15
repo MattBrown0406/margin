@@ -126,9 +126,11 @@ struct RolloverCard: View {
         let flexibleLeft = categories.filter(\.isFlexible).reduce(0) { $0 + $1.monthlyLimit } - flexibleSpend
         let spokenFor: Set<String> = [AllocationTarget.Kind.fund.rawValue, AllocationTarget.Kind.tax.rawValue, AllocationTarget.Kind.extra.rawValue]
         let setAside = allocations.filter { $0.monthKey == previousKey && spokenFor.contains($0.kind) }.reduce(0) { $0 + $1.amount }
+        // A rollover already made for that month (perhaps on another device whose settings haven't synced yet).
+        let rolled = allocations.filter { $0.monthKey == previousKey && $0.kind == "rollover" }.reduce(0) { $0 + $1.amount }
         // Late Net from last month can be assigned this month instead, so it isn't leftover to roll.
         let carried = NetAssignment.carriedIn(transactions: transactions, allocations: allocations)
-        return (min(flexibleLeft, net - personalSpend - setAside - carried) * 100).rounded(.down) / 100
+        return ((min(flexibleLeft, net - personalSpend - setAside - carried) - rolled) * 100).rounded(.down) / 100
     }
     private var funds: [String] { categories.filter(\.isFund).map(\.name).sorted() }
 

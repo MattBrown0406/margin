@@ -209,6 +209,10 @@ enum StarterBudget {
     /// Debt payoff.
     var debtStrategy: String = PayoffStrategy.snowball.rawValue
     var extraDebtPayment: Double = 0
+    /// The payoff order, fixed when the strategy was chosen or a debt was added or removed, so paying debts down
+    /// (which changes balances and interest) never reshuffles which one comes first. `debtOrderKey` says what it's for.
+    var debtOrderIDs: [String] = []
+    var debtOrderKey: String = ""
     /// Assigning Net: where money goes once the plan is covered (a fund or goal name; empty = leave it unassigned).
     var surplusTarget: String = ""
     /// The last month ("2026-09") whose leftover flexible money was offered for a fund.
@@ -245,6 +249,7 @@ enum StarterBudget {
         if taxReserveAdjustment == 0 { taxReserveAdjustment = other.taxReserveAdjustment }
         if debtStrategy == PayoffStrategy.snowball.rawValue { debtStrategy = other.debtStrategy }
         if extraDebtPayment == 0 { extraDebtPayment = other.extraDebtPayment }
+        if debtOrderKey.isEmpty { debtOrderKey = other.debtOrderKey; debtOrderIDs = other.debtOrderIDs }
         if surplusTarget.isEmpty { surplusTarget = other.surplusTarget }
         lastRolloverMonthKey = max(lastRolloverMonthKey, other.lastRolloverMonthKey)
         ignoredRecurringKeys = Array(Set(ignoredRecurringKeys + other.ignoredRecurringKeys)).sorted()
@@ -270,12 +275,25 @@ enum StarterBudget {
     /// A connected bank account whose balance this debt follows.
     var linkedAccountID: String?
     var createdAt: Date = Date.distantPast
+    /// Payments recorded in the month `paidMonthKey` ("2026-10"), so the plan doesn't ask for them again.
+    var paidMonthKey: String = ""
+    var paidThisMonth: Double = 0
 
     init(name: String, kind: String = "card", balance: Double, apr: Double, minimumPayment: Double, customRank: Int = 0, linkedAccountID: String? = nil) {
         self.id = UUID(); self.name = name; self.kind = kind; self.balance = balance; self.apr = apr
         self.minimumPayment = minimumPayment; self.customRank = customRank; self.linkedAccountID = linkedAccountID; self.createdAt = .now
     }
-    var info: DebtInfo { DebtInfo(id: id, name: name, balance: balance, apr: apr, minimumPayment: minimumPayment, customRank: customRank) }
+    var info: DebtInfo {
+        DebtInfo(id: id, name: name, balance: balance, apr: apr, minimumPayment: minimumPayment, customRank: customRank,
+                 paidThisMonth: paidMonthKey == Calendar.current.monthKey(for: .now) ? paidThisMonth : 0)
+    }
+    /// Records a payment made this month.
+    func recordPayment(_ amount: Double, now: Date = .now) {
+        let key = Calendar.current.monthKey(for: now)
+        if paidMonthKey != key { paidMonthKey = key; paidThisMonth = 0 }
+        paidThisMonth += amount
+        balance = max(0, ((balance - amount) * 100).rounded() / 100)
+    }
 }
 
 @Model final class Asset {

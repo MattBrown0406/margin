@@ -62,7 +62,15 @@ struct NetWorthView: View {
                 ForEach(connectedDebts) { account in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack { Label(account.name, systemImage: "building.columns"); Spacer(); Text((account.currentBalance ?? 0).money).bold() }
-                        Button("Add to my payoff plan") { track(account) }.font(.caption.bold())
+                        let unlinked = debts.filter { $0.linkedAccountID == nil }
+                        if unlinked.isEmpty { Button("Add to my payoff plan") { track(account) }.font(.caption.bold()) }
+                        else {
+                            Menu("Add to my payoff plan") {
+                                // A debt already entered by hand: link it instead of counting it twice.
+                                ForEach(unlinked) { debt in Button("It’s my \(debt.name)") { link(debt, to: account) } }
+                                Button("Add as a new debt") { track(account) }
+                            }.font(.caption.bold())
+                        }
                     }
                 }
                 NavigationLink("Debt payoff plan") { DebtPayoffView() }
@@ -99,6 +107,11 @@ struct NetWorthView: View {
         var changed = false
         for debt in debts { if let id = debt.linkedAccountID, let balance = byID[id]?.currentBalance, abs(balance - debt.balance) > 0.005 { debt.balance = max(0, balance); changed = true } }
         if changed { try? context.save() }
+    }
+    private func link(_ debt: Debt, to account: BankAccountDTO) {
+        debt.linkedAccountID = account.id
+        if let balance = account.currentBalance { debt.balance = max(0, balance) }
+        try? context.save()
     }
     private func track(_ account: BankAccountDTO) {
         context.insert(Debt(name: account.name, kind: account.type == "loan" ? "loan" : "card", balance: max(0, account.currentBalance ?? 0), apr: 0, minimumPayment: 0,

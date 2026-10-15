@@ -36,10 +36,28 @@ private struct DebtPayoffList: View {
     static let planLineName = "Debt payments"
     private var active: [Debt] { debts.filter { $0.balance > 0.005 } }
     /// All debts, paid-off ones included: their minimums keep rolling into the debts still owed.
-    private var comparison: DebtPayoff.Comparison { DebtPayoff.compare(debts.map(\.info), strategy: settings.strategy, extra: settings.extraDebtPayment) }
+    private var comparison: DebtPayoff.Comparison {
+        // Planned in the fixed order on screen (ranks from `ordered`), so the plan and the list always agree.
+        let rank = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset) })
+        let infos = debts.map { debt -> DebtInfo in var info = debt.info; info.customRank = rank[debt.id] ?? Int.max; return info }
+        return DebtPayoff.compare(infos, strategy: .custom, extra: settings.extraDebtPayment)
+    }
+    /// What the saved order is for: the strategy and every debt (paid-off ones stay listed, so paying one off keeps it).
+    private var orderKey: String { settings.debtStrategy + "|" + debts.map(\.id.uuidString).sorted().joined(separator: ",") }
+    /// Unpaid debts in payoff order: the person's own order, or the strategy's order as fixed when it was chosen
+    /// (or when debts were added or removed) — never re-sorted by balances that payments have changed since.
     private var ordered: [Debt] {
-        let byID = Dictionary(uniqueKeysWithValues: debts.map { ($0.id, $0) })
-        return settings.strategy.order(active.map(\.info)).compactMap { byID[$0.id] }
+        let byID = Dictionary(uniqueKeysWithValues: active.map { ($0.id, $0) })
+        if settings.strategy == .custom { return PayoffStrategy.custom.order(active.map(\.info)).compactMap { byID[$0.id] } }
+        let saved = settings.debtOrderKey == orderKey ? settings.debtOrderIDs.compactMap(UUID.init(uuidString:)) : settings.strategy.order(active.map(\.info)).map(\.id)
+        let known = saved.compactMap { byID[$0] }
+        return known + settings.strategy.order(active.filter { !saved.contains($0.id) }.map(\.info)).compactMap { byID[$0.id] }
+    }
+    private func lockOrder() {
+        guard settings.strategy != .custom, settings.debtOrderKey != orderKey else { return }
+        settings.debtOrderIDs = settings.strategy.order(active.map(\.info)).map(\.id.uuidString)
+        settings.debtOrderKey = orderKey
+        try? context.save()
     }
     private var planLine: BudgetCategory? { categories.first { $0.name == Self.planLineName } }
 
@@ -68,6 +86,7 @@ private struct DebtPayoffList: View {
                         Button { editing = debt } label: { DebtRow(debt: debt, position: index + 1, outcome: outcome, isFocus: plan.months.first?.focus == debt.id) }
                             .buttonStyle(.plain)
                             .swipeActions { Button("Payment") { paying = debt }.tint(.marginInk) }
+                            .contextMenu { Button("Record a payment") { paying = debt } }
                     }
                     .onMove(perform: settings.strategy == .custom ? move : nil)
                 } header: {
@@ -113,7 +132,9 @@ private struct DebtPayoffList: View {
         }
         .sheet(isPresented: $adding) { DebtEditView(debt: nil, nextRank: (debts.map(\.customRank).max() ?? -1) + 1) }
         .sheet(item: $editing) { DebtEditView(debt: $0, nextRank: 0) }
-        .sheet(item: $paying) { DebtPaymentView(debt: $0, planLine: planLine) }
+        .sheet(item: $paying) { debt in DebtPaymentView(debt: debt, planLine: planLine, suggested: comparison.plan.months.first?.payments[debt.id] ?? 0) }
+        .task { lockOrder() }
+        .onChange(of: orderKey) { lockOrder() }
     }
 
     @ViewBuilder private func summary(_ comparison: DebtPayoff.Comparison) -> some View {
@@ -155,8 +176,12 @@ private struct DebtPayoffList: View {
     }
 
     private func choose(_ strategy: PayoffStrategy) {
-        // Starting a custom order from the order on screen, so nothing jumps.
-        if strategy == .custom, settings.strategy != .custom { for (index, debt) in ordered.enumerated() { debt.customRank = index } }
+        // Starting a custom order from the order on screen, so nothing jumps — but only the first time: an order the
+        // person already dragged into place is kept when they switch back to it.
+        if strategy == .custom, settings.strategy != .custom, Set(debts.map(\.customRank)).count < debts.count {
+            for (index, debt) in ordered.enumerated() { debt.customRank = index }
+            for debt in debts where debt.balance <= 0.005 { debt.customRank = ordered.count + (debts.firstIndex(of: debt) ?? 0) }
+        }
         settings.debtStrategy = strategy.rawValue
         try? context.save()
     }
@@ -247,6 +272,8 @@ private struct DebtEditView: View {
 private struct DebtPaymentView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
     let debt: Debt; let planLine: BudgetCategory?
+    /// What the plan has this debt getting for the rest of this month (minimum, plus extra and rolled-over payments).
+    let suggested: Double
     @State private var amount = ""; @State private var date = Date(); @State private var recordExpense = true
 
     var body: some View { NavigationStack { Form {
@@ -255,15 +282,15 @@ private struct DebtPaymentView: View {
             TextField("Payment amount", text: $amount).keyboardType(.decimalPad)
             DatePicker("Date", selection: $date, displayedComponents: .date)
             if let planLine { Toggle("Also log it under \(planLine.name)", isOn: $recordExpense) }
-        } footer: { Text("Lowers the balance by the payment. If interest was charged, edit the balance to match your statement instead.") }
+        } footer: { Text(suggested > 0.005 ? "Your plan has \(suggested.moneyExact) going to this debt for the rest of this month. Recording it lowers the balance; if interest was charged, edit the balance to match your statement." : "Your plan has nothing more due on this debt this month. Recording a payment lowers the balance.") }
         Section { Button("Record payment") { save() }.bold().frame(maxWidth: .infinity).disabled(Double(moneyInput: amount) == nil) }
     }.navigationTitle(debt.name)
-     .onAppear { amount = String(format: "%.2f", min(debt.balance, debt.minimumPayment)) }
+     .onAppear { let value = suggested > 0.005 ? suggested : min(debt.balance, debt.minimumPayment); amount = value > 0 ? String(format: "%.2f", value) : "" }
      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }
 
     private func save() {
         guard let value = Double(moneyInput: amount) else { return }
-        debt.balance = max(0, ((debt.balance - value) * 100).rounded() / 100)
+        debt.recordPayment(value, now: date)
         if recordExpense, let planLine { context.insert(Transaction(title: "Payment: \(debt.name)", amount: value, date: date, category: planLine.name, ledgerScope: "personal")) }
         try? context.save(); dismiss()
     }
