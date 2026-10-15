@@ -11,6 +11,7 @@ A small read-only Plaid backend for Margin. The iOS app never receives Plaid sec
 - Only `transactions` is requested. Transfer, payment, identity, investments, and liabilities permissions are not requested.
 - No access token, Plaid secret, or bank credential is returned to the app or written to logs.
 - When a bank login expires, sync returns 409 and the connection is flagged `requiresAttention`; `POST /v1/plaid/link-token` with `{ "itemId" }` returns an update-mode token to repair it.
+- A sync fetches at most 20 pages (10,000 changes). Beyond that it saves its progress and returns `hasMore: true`; call sync again to continue. The cursor the update began from is kept, so a `TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION` restart begins there, as Plaid requires. A sync that finishes after a newer one of the same Item is discarded rather than rolling the cursor back.
 - `TOKEN_ENCRYPTION_KEY` is required in every environment, and `PLAID_ENV` must be `sandbox` or `production` (Plaid retired `development`).
 
 ## Routes
@@ -24,7 +25,7 @@ All JSON. Errors are `{ "error": string, "code"?: string }`. `code` is only ever
 | `POST /v1/plaid/link-token` | bearer | `{ itemId? }` | `200 { linkToken, expiration }` |
 | `POST /v1/plaid/exchange` | bearer | `{ publicToken, institutionName? }` | `201 { itemId, institutionName, accounts }` |
 | `GET /v1/plaid/accounts` | bearer | | `200 { connections }` |
-| `POST /v1/plaid/sync` | bearer | `{ itemId }` | `200 { added, modified, removed, accounts, transactions }` |
+| `POST /v1/plaid/sync` | bearer | `{ itemId }` | `200 { added, modified, removed, hasMore, accounts, transactions }` |
 | `DELETE /v1/plaid/connections/:itemId` | bearer | | `200 { disconnected: true }` |
 | `DELETE /v1/account` | bearer | | `200 { deleted: true }` |
 | `DELETE /v1/session` | bearer | | `200 { signedOut: true }` |
@@ -65,7 +66,7 @@ Deleting an account with no data also returns `200`. A link that completes after
 
 - `400` invalid `question` or `context`
 - `422` "Margin can't help with that question." when Claude declines
-- `429` "Daily question limit reached" after 30 questions per user in a rolling 24 hours (a question that fails with `429`, `502` or `503` hands its per-user and global slots back; answers and `422` refusals count); `429` "Ask Margin is at capacity today" after `ASK_DAILY_GLOBAL_LIMIT` (default 2000) questions across all users in a rolling 24 hours (both in memory, per process); `429` "Assistant is busy, try again shortly" when Anthropic rate-limits
+- `429` "Daily question limit reached" after 30 questions per user in a rolling 24 hours (a question that fails with `429`, `503` or an unbilled `502` hands its per-user and global slots back; answers, `422` refusals, and billed replies with no usable text count); `429` "Ask Margin is at capacity today" after `ASK_DAILY_GLOBAL_LIMIT` (default 2000) questions across all users in a rolling 24 hours (both in memory, per process); `429` "Assistant is busy, try again shortly" when Anthropic rate-limits
 - `502` upstream failure (including a reply cut off before any text); `503` "Ask Margin isn't configured" without `ANTHROPIC_API_KEY`
 
 Each question is capped at `max_tokens: 3000` with `effort: "low"`, and the SDK retries a failed call at most once. A reply cut off at the token cap returns the text written so far.

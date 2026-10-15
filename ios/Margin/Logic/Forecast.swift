@@ -128,7 +128,10 @@ enum CashFlowForecast {
                 usedUnlinked.insert(id); remaining -= transfer.amount
             }
             guard remaining > 0.005, booking.expectedNet - remaining < booking.expectedNet * transferDoneShare else { return nil }
+            // The rest is expected from when the money actually arrived, so a job that paid late isn't dropped by the
+            // overdue grace that only applies to bookings still waiting to pay.
             var result = booking; result.expectedNet = remaining
+            result.expectedDate = max(booking.expectedDate, calendar.startOfDay(for: receipt.date))
             return result
         }
         var result: [BookedJobInfo] = []

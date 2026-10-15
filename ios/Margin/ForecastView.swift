@@ -11,6 +11,8 @@ struct ForecastView: View {
     @State private var payingJob: BookedJob?
 
     private var openJobs: [BookedJob] { bookedJobs.filter(\.isOpen).sorted { $0.expectedDate < $1.expectedDate } }
+    /// Unpaid bookings older than this no longer count in the forecast.
+    private var graceStart: Date { Calendar.current.date(byAdding: .day, value: -CashFlowForecast.overdueGraceDays, to: .now) ?? .distantPast }
     private var entries: [LedgerEntry] { transactions.map(\.ledgerEntry) }
     /// Payments already recorded (Add, bank import) that look like a booking's; those bookings stop counting.
     private var likelyPayments: [UUID: LedgerEntry] {
@@ -23,10 +25,11 @@ struct ForecastView: View {
 
     /// Paid jobs whose Net transfers so far fall short, with what's still expected — shown so it's never invisible.
     private var awaitingTransfers: [(job: BookedJob, remaining: Double)] {
-        let expected = Dictionary(BookedJob.expectedIncome(bookedJobs, entries: entries).map { ($0.id, $0.expectedNet) }, uniquingKeysWith: { a, _ in a })
-        // Only jobs the forecast still counts (within the overdue grace), so the caption below stays true.
-        let graceStart = Calendar.current.date(byAdding: .day, value: -CashFlowForecast.overdueGraceDays, to: .now) ?? .distantPast
-        return bookedJobs.filter { $0.status == "paid" && $0.expectedDate >= graceStart }.compactMap { job in expected[job.id].map { (job, $0) } }.sorted { $0.job.expectedDate < $1.job.expectedDate }
+        let expected = Dictionary(BookedJob.expectedIncome(bookedJobs, entries: entries).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // Only jobs the forecast still counts (within the overdue grace, measured from when the payment arrived), so
+        // the caption below stays true.
+        return bookedJobs.filter { $0.status == "paid" }.compactMap { job in expected[job.id].flatMap { $0.expectedDate >= graceStart ? (job, $0.expectedNet) : nil } }
+            .sorted { $0.job.expectedDate < $1.job.expectedDate }
     }
 
     var body: some View {
@@ -52,11 +55,12 @@ struct ForecastView: View {
             }
             ForEach(openJobs) { job in
                 let overdue = job.expectedDate < Calendar.current.startOfDay(for: .now)
+                let uncounted = job.expectedDate < graceStart
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(job.title).font(.headline)
-                            Text(overdue ? "Expected \(job.expectedDate.formatted(date: .abbreviated, time: .omitted)) · overdue" : "Expected \(job.expectedDate.formatted(date: .abbreviated, time: .omitted))")
+                            Text("Expected \(job.expectedDate.formatted(date: .abbreviated, time: .omitted))\(uncounted ? " · overdue, no longer counted in the forecast" : overdue ? " · overdue" : "")")
                                 .font(.caption).foregroundStyle(overdue ? Color.marginCoral : .secondary)
                         }
                         Spacer()

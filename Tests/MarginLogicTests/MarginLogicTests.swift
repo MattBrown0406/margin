@@ -405,3 +405,28 @@ private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "
         #expect(small.fitsInMonth.map { calendar.isSameMonth($0, day(2026, 11, 1)) } == true)
     }
 }
+
+@Suite struct AuditRound4Tests {
+    // Running totals: Oct 1,000, Nov 1,500, Dec 500, Jan −3,500. Only 500 of October's surplus is free.
+    func forecast(now: Date) -> [ForecastMonth] {
+        let nov = BookedJobInfo(id: UUID(), title: "Nov", expectedDate: day(2026, 11, 5), expectedGross: 7000, expectedNet: 4500)
+        let dec = BookedJobInfo(id: UUID(), title: "Dec", expectedDate: day(2026, 12, 5), expectedGross: 5000, expectedNet: 3000)
+        return CashFlowForecast.months(entries: [net(5000, day(2026, 10, 2))], booked: [nov, dec], plannedMonthly: 4000, now: now, count: 4, calendar: calendar)
+    }
+
+    @Test func unassignedIncomeOnlyCoversWhatLaterMonthsDontNeed() {
+        let now = day(2026, 10, 4)
+        let spentUp = SafeToSpend.make(limit: 900, spentBeforeToday: 900, spentToday: 0, now: now, calendar: calendar)
+        #expect(Affordability.evaluate(amount: 1000, in: now, now: now, safe: spentUp, forecast: forecast(now: now), calendar: calendar).level == .notYet)
+        #expect(Affordability.evaluate(amount: 400, in: now, now: now, safe: spentUp, forecast: forecast(now: now), calendar: calendar).level == .tight)
+    }
+
+    @Test func aLatePaidBookingsNetStillCountsAfterTheOriginalDatesGrace() {
+        let booking = BookedJobInfo(id: UUID(), title: "Late payer", expectedDate: day(2026, 8, 8), expectedGross: 7500, expectedNet: 4500)
+        let job = UUID(), entries = [gross(7500, day(2026, 10, 2), job: job, title: "Late payer")]
+        let expected = CashFlowForecast.expectedNet(open: [], paid: [(booking, job)], entries: entries, calendar: calendar)
+        #expect(expected.first?.expectedNet == 4500)
+        let months = CashFlowForecast.months(entries: entries, booked: expected, plannedMonthly: 4000, now: day(2026, 10, 8), count: 2, calendar: calendar)
+        #expect(months[0].expectedNet == 4500)    // Aug 8 is past the 60-day grace, but the Gross came Oct 2
+    }
+}

@@ -110,11 +110,13 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         if (!item) throw httpError(404, 'Bank connection not found');
         const accessToken = await store.getAccessToken(userId, itemId);
         let synced;
-        try { synced = await plaid.syncAll(accessToken, item.cursor); }
+        const startCursor = item.cursor ?? null;
+        // An update cut off at the page cap resumes from its cursor but restarts from where that update began.
+        try { synced = await plaid.syncAll(accessToken, startCursor, 'paginationStart' in item ? item.paginationStart : startCursor); }
         catch (error) { if (error.code === 'ITEM_LOGIN_REQUIRED') await store.updateItem(userId, itemId, { requiresAttention: true }); throw error; }
-        const result = await store.applySync(userId, itemId, { ...synced, accounts: synced.accounts?.map(mapAccount) });
+        const result = await store.applySync(userId, itemId, { ...synced, startCursor, accounts: synced.accounts?.map(mapAccount) });
         const transactions = result.transactions.map(mapTransaction).sort((a, b) => String(b.date).localeCompare(String(a.date)));
-        return json(res, 200, { added: result.added, modified: result.modified, removed: result.removed, accounts: result.accounts, transactions });
+        return json(res, 200, { added: result.added, modified: result.modified, removed: result.removed, hasMore: result.hasMore, accounts: result.accounts, transactions });
       }
       const removeMatch = pathname.match(/^\/v1\/plaid\/connections\/([^/]+)$/);
       if (req.method === 'DELETE' && removeMatch) {

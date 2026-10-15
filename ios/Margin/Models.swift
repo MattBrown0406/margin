@@ -177,7 +177,8 @@ enum StarterBudget {
             BudgetCategory(name: "Tax reserve", icon: "percent", monthlyLimit: 850, colorHex: "6D597A", isFlexible: false, groupName: "Taxes", dueDay: 25)
         ]
         seedCategories.forEach(context.insert)
-        context.insert(SavingsGoal(name: "Peace Number", target: 25000, saved: 0, targetDate: Calendar.current.date(byAdding: .month, value: 12, to: .now) ?? .now, icon: "shield.fill"))
+        // Same target date as the Peace Number fund above: the goal and the fund are one pot of money.
+        context.insert(SavingsGoal(name: "Peace Number", target: 25000, saved: 0, targetDate: targetDate ?? .now, icon: "shield.fill"))
         UserDefaults.standard.set(true, forKey: seededKey)
         try? context.save()
     }

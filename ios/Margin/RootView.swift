@@ -219,11 +219,13 @@ struct PlanView: View {
             Text("Upcoming personal bills").font(.title2.bold())
             Text("Due dates stay separate from everyday spending so nothing sneaks up on you.").foregroundStyle(.secondary)
             ForEach(categories.filter { $0.dueDay != nil }.sorted { ($0.dueDay ?? 0) < ($1.dueDay ?? 0) }) { bill in
-                let paid = month.contains { !$0.isIncome && $0.ledgerScope == "personal" && $0.category == bill.name }
+                // Net of refunds: a credit alone (or a charge fully refunded) doesn't mean the bill was paid.
+                let paidAmount = month.filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.category == bill.name }.reduce(0) { $0 + $1.amount }
+                let paid = paidAmount > 0.005
                 HStack(spacing: 12) {
                     VStack { Text("DUE").font(.caption2.bold()); Text("\(bill.dueDay ?? 0)").font(.title3.bold()) }
                         .frame(width: 48, height: 48).background(paid ? Color.marginMint.opacity(0.35) : Color.marginInk, in: RoundedRectangle(cornerRadius: 13)).foregroundStyle(paid ? Color.marginInk : Color.white)
-                    VStack(alignment: .leading) { Text(bill.name).bold(); Text(paid ? "Paid" : "Upcoming").font(.caption).foregroundStyle(.secondary) }
+                    VStack(alignment: .leading) { Text(bill.name).bold(); Text(paid ? "Paid \(paidAmount.money)" : "Upcoming").font(.caption).foregroundStyle(.secondary) }
                     Spacer(); Text(bill.monthlyLimit.money).bold()
                 }.marginCard()
             }
@@ -333,6 +335,7 @@ struct PlanSummary: View {
 
 struct BudgetLineRow: View {
     @Environment(\.modelContext) private var context
+    @Query private var goals: [SavingsGoal]
     @Bindable var category: BudgetCategory
     let transactions: [Transaction]
     @State private var editing = false
@@ -352,7 +355,12 @@ struct BudgetLineRow: View {
             }
         }.navigationTitle(category.name).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } } }
             // Swiping the sheet away skips Done, so clean up and save here. Negative amounts would corrupt every total.
-            .onDisappear { category.monthlyLimit = max(0, category.monthlyLimit); category.fundBalance = max(0, category.fundBalance); category.fundTarget = max(0, category.fundTarget); try? context.save() } } }
+            .onDisappear {
+                category.monthlyLimit = max(0, category.monthlyLimit); category.fundBalance = max(0, category.fundBalance); category.fundTarget = max(0, category.fundTarget)
+                // A fund and a goal with the same name (the Peace Number) are one pot of money.
+                if category.isFund, let goal = goals.first(where: { $0.name.caseInsensitiveCompare(category.name) == .orderedSame }) { goal.saved = category.fundBalance; if category.fundTarget > 0 { goal.target = category.fundTarget } }
+                try? context.save()
+            } } }
     }
 }
 
@@ -378,12 +386,15 @@ struct ActivityView: View {
         var skipped = (try? JSONDecoder().decode([String].self, from: Data(skippedJSON.utf8))) ?? []
         skipped += removed.compactMap(\.externalID)
         if let data = try? JSONEncoder().encode(Array(Set(skipped)).sorted()), let value = String(data: data, encoding: .utf8) { skippedJSON = value }
-        // A booking whose only recorded payment is deleted goes back to booked; otherwise it would vanish from the
-        // forecast entirely (a paid booking with no payment expects nothing more).
+        // A booking goes back to booked when its Gross receipt is deleted, or its only payment (Net-only bookings);
+        // otherwise it would vanish from the forecast (a paid booking with no Gross expects nothing more).
         let removedIDs = Set(removed.map(\.id)), removedJobIDs = Set(removed.compactMap(\.jobID))
-        let remainingPayments = Set(transactions.filter { $0.isIncome && !removedIDs.contains($0.id) }.compactMap(\.jobID))
+        let removedGross = Set(removed.filter { $0.isIncome && $0.incomeKind == "gross" }.compactMap(\.jobID))
+        let remaining = transactions.filter { $0.isIncome && !removedIDs.contains($0.id) }
+        let remainingPayments = Set(remaining.compactMap(\.jobID)), remainingGross = Set(remaining.filter { $0.incomeKind == "gross" }.compactMap(\.jobID))
         for job in bookedJobs where job.status == "paid" || job.status == "settled" {
-            if let id = job.paidJobID, removedJobIDs.contains(id), !remainingPayments.contains(id) { job.status = "booked"; job.paidJobID = nil }
+            guard let id = job.paidJobID, removedJobIDs.contains(id) else { continue }
+            if (removedGross.contains(id) && !remainingGross.contains(id)) || !remainingPayments.contains(id) { job.status = "booked"; job.paidJobID = nil }
         }
         removed.forEach(context.delete); try? context.save()
     }
@@ -466,6 +477,7 @@ struct GoalsView: View {
 /// Records money moved into a goal, or corrects its totals. Without this a goal could never show progress.
 struct GoalEditView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
+    @Query private var categories: [BudgetCategory]
     let goal: SavingsGoal
     @State private var added = ""; @State private var saved = ""; @State private var target = ""
     /// Blank or "0" means zero; anything else must be a valid amount.
@@ -486,6 +498,8 @@ struct GoalEditView: View {
     private func save() {
         guard let add = amountOrZero(added), let current = amountOrZero(saved), let goalTarget = Double(moneyInput: target) else { return }
         goal.saved = current + add; goal.target = goalTarget
+        // Keep the same-named sinking fund (the Peace Number) in step: they are one pot of money.
+        for fund in categories where fund.isFund && fund.name.caseInsensitiveCompare(goal.name) == .orderedSame { fund.fundBalance = goal.saved; fund.fundTarget = goal.target }
         try? context.save(); dismiss()
     }
 }

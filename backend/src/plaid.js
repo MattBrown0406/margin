@@ -1,6 +1,7 @@
 const hosts = { sandbox: 'https://sandbox.plaid.com', production: 'https://production.plaid.com' };
 // Plaid asks clients to restart pagination from the original cursor when data changes mid-sync.
 const MUTATION_DURING_PAGINATION = 'TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION';
+export const MAX_PAGES = 20;
 
 export class PlaidClient {
   constructor(config, fetchImpl = fetch) { this.config = config; this.fetch = fetchImpl; }
@@ -16,15 +17,21 @@ export class PlaidClient {
   accounts(accessToken) { return this.call('/accounts/get', { access_token: accessToken }); }
   remove(accessToken) { return this.call('/item/remove', { access_token: accessToken }); }
   syncPage(accessToken, cursor) { return this.call('/transactions/sync', { access_token: accessToken, cursor: cursor || undefined, count: 500 }); }
-  async syncAll(accessToken, initialCursor, maxRestarts = 3) {
+  // restartCursor: when a previous call stopped at the page cap mid-update, the cursor that update began from. Plaid
+  // requires a mutation-during-pagination restart from the update's first cursor, not from where we resumed.
+  async syncAll(accessToken, initialCursor, restartCursor = initialCursor, maxRestarts = 3) {
+    let cursor = initialCursor;
     for (let attempt = 0; ; attempt++) {
-      try { return await this.syncPages(accessToken, initialCursor); }
-      catch (error) { if (error.code !== MUTATION_DURING_PAGINATION || attempt >= maxRestarts) throw error; }
+      try { return await this.syncPages(accessToken, cursor); }
+      catch (error) { if (error.code !== MUTATION_DURING_PAGINATION || attempt >= maxRestarts) throw error; cursor = restartCursor; }
     }
   }
+  // Stops after MAX_PAGES with hasMore: true and the cursor reached, so a very large first sync makes progress over
+  // several requests instead of failing the same way every time. The store keys transactions by id, so pages
+  // fetched again after a restart are applied idempotently.
   async syncPages(accessToken, initialCursor) {
-    let cursor = initialCursor || null, added = [], modified = [], removed = [], accounts, pages = 0;
-    do { const page = await this.syncPage(accessToken, cursor); added.push(...page.added); modified.push(...page.modified); removed.push(...page.removed); accounts = page.accounts || accounts; cursor = page.next_cursor; pages++; if (!page.has_more) break; if (pages >= 20) throw Object.assign(new Error('Plaid sync exceeded page safety limit'), { status: 502 }); } while (true);
-    return { cursor, added, modified, removed, accounts };
+    let cursor = initialCursor || null, added = [], modified = [], removed = [], accounts, pages = 0, hasMore = false;
+    do { const page = await this.syncPage(accessToken, cursor); added.push(...page.added); modified.push(...page.modified); removed.push(...page.removed); accounts = page.accounts || accounts; cursor = page.next_cursor; pages++; hasMore = Boolean(page.has_more); } while (hasMore && pages < MAX_PAGES);
+    return { cursor, added, modified, removed, accounts, hasMore };
   }
 }

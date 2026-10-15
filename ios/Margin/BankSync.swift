@@ -36,7 +36,7 @@ struct ImportedBankTransaction: Codable, Identifiable {
 private struct ConnectionsResponse: Codable { let connections: [BankConnectionDTO] }
 private struct LinkTokenResponse: Codable { let linkToken: String; let expiration: String }
 private struct ExchangeResponse: Codable { let itemId: String; let institutionName: String; let accounts: [BankAccountDTO] }
-private struct SyncResponse: Codable { let added: Int; let modified: Int; let removed: Int; let transactions: [ImportedBankTransaction] }
+private struct SyncResponse: Codable { let added: Int; let modified: Int; let removed: Int; let transactions: [ImportedBankTransaction]; let hasMore: Bool? }
 
 @MainActor final class BankSyncViewModel: ObservableObject {
     @Published var connections: [BankConnectionDTO] = []
@@ -77,7 +77,12 @@ private struct SyncResponse: Codable { let added: Int; let modified: Int; let re
     func sync(_ connection: BankConnectionDTO) async {
         guard let api else { return }
         await work {
-            let synced = try await api.request("/v1/plaid/sync", method: "POST", body: ["itemId": connection.itemId], as: SyncResponse.self).transactions
+            // A very large first sync arrives in parts; keep going while the service says there's more (bounded).
+            var response = try await api.request("/v1/plaid/sync", method: "POST", body: ["itemId": connection.itemId], as: SyncResponse.self)
+            for _ in 0..<10 where response.hasMore == true {
+                response = try await api.request("/v1/plaid/sync", method: "POST", body: ["itemId": connection.itemId], as: SyncResponse.self)
+            }
+            let synced = response.transactions
             // Keep other connections' items waiting in review; replace only this connection's.
             let accountIDs = Set(connection.accounts.map(\.id)).union(synced.map(\.accountId))
             self.reviewTransactions = self.reviewTransactions.filter { !accountIDs.contains($0.accountId) } + synced

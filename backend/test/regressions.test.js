@@ -143,3 +143,45 @@ test('non-numeric exp and Object.prototype names are rejected or isolated', asyn
     assert.equal((await f.request('/v1/plaid/sync', { method: 'POST', body: JSON.stringify({ itemId: 'toString' }) })).status, 404);
   } finally { await f.close(); }
 });
+
+test('a sync past the page cap saves its progress and resumes, restarting from where the update began', async () => {
+  const { PlaidClient, MAX_PAGES } = await import('../src/plaid.js');
+  const client = new PlaidClient({ plaidClientId: 'id', plaidSecret: 'secret', plaidEnv: 'sandbox' });
+  const calls = []; let mutateOnce = true;
+  client.syncPage = async (_token, cursor) => {
+    calls.push(cursor);
+    const n = cursor === null ? 0 : Number(cursor.slice(1));
+    if (n === MAX_PAGES + 2 && mutateOnce) { mutateOnce = false; throw plaidError('TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION'); }
+    return { added: [tx(`t${n}`, 'a')], modified: [], removed: [], next_cursor: `p${n + 1}`, has_more: n + 1 < MAX_PAGES + 5 };
+  };
+  const first = await client.syncAll('token', null);
+  assert.equal(first.hasMore, true);
+  assert.equal(first.cursor, `p${MAX_PAGES}`);
+  assert.equal(first.added.length, MAX_PAGES);
+  // Resuming from the saved cursor; the mutation error must restart from the update's first cursor (null).
+  calls.length = 0;
+  const second = await client.syncAll('token', first.cursor, null);
+  assert.equal(calls[0], `p${MAX_PAGES}`);
+  assert.ok(calls.includes(null), 'restarted from the start of the update');
+  assert.equal(second.hasMore, true);
+});
+
+test('applySync keeps the update start while more pages remain and drops a stale result', async () => {
+  const { FileStore } = await import('../src/store.js');
+  const { mkdtemp } = await import('node:fs/promises'); const { tmpdir } = await import('node:os'); const { join } = await import('node:path');
+  const store = new FileStore(join(await mkdtemp(join(tmpdir(), 'margin-')), 'data.json'), 'a'.repeat(64));
+  await store.saveItem('apple:u', { itemId: 'item', accessToken: 'tok', institutionName: 'Bank' }, 0);
+  const page = (id, cursor, startCursor, hasMore) => ({ cursor, startCursor, hasMore, added: [tx(id, 'a')], modified: [], removed: [] });
+  let r = await store.applySync('apple:u', 'item', page('t1', 'c20', null, true));
+  assert.equal(r.hasMore, true);
+  let item = (await store.getUser('apple:u')).items.item;
+  assert.equal(item.cursor, 'c20'); assert.equal(item.paginationStart, null);
+  // A slower sync that also started from null finishes now: it must not roll the cursor back.
+  r = await store.applySync('apple:u', 'item', page('old', 'c5', null, false));
+  item = (await store.getUser('apple:u')).items.item;
+  assert.equal(item.cursor, 'c20'); assert.equal(r.added, 0);
+  assert.ok(!r.transactions.some(t => t.transaction_id === 'old'));
+  r = await store.applySync('apple:u', 'item', page('t2', 'c25', 'c20', false));
+  item = (await store.getUser('apple:u')).items.item;
+  assert.equal(item.cursor, 'c25'); assert.ok(!('paginationStart' in item)); assert.equal(r.hasMore, false);
+});

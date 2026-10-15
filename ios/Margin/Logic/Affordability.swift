@@ -41,7 +41,8 @@ enum Affordability {
                                             newDailyAllowance: daily, fitsInMonth: nil, suggestedMonthlySetAside: nil)
             }
             let shortfall = amount - safe.flexibleLeft
-            let unassignedReceived = max(0, (target?.receivedNet ?? 0) - (target?.planned ?? 0))
+            // Unassigned Net is spendable only as far as later months don't need this month's surplus.
+            let unassignedReceived = min(max(0, (target?.receivedNet ?? 0) - (target?.planned ?? 0)), target.map { headroom(at: $0, in: forecast) } ?? 0)
             if unassignedReceived >= shortfall {
                 return AffordabilityVerdict(level: .tight, headline: "Only if you use income you haven’t assigned yet.",
                                             details: ["It’s \(shortfall.money) more than your flexible money left.", "You have \(unassignedReceived.money) of this month’s Net not assigned to the plan."],
