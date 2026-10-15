@@ -344,7 +344,15 @@ struct BudgetLineRow: View {
             HStack { Text("Spent \(spent.money)"); Spacer(); Text("Remaining \((category.monthlyLimit-spent).money)") }.font(.caption).foregroundStyle(.secondary)
             if category.isFund { Label("Fund balance \(category.fundBalance.money) of \(category.fundTarget.money)", systemImage: "banknote.fill").font(.caption.bold()).foregroundStyle(.green) }
             if let day = category.dueDay { Text("Due on the \(day.ordinal)").font(.caption.bold()).foregroundStyle(.orange) }
-        }.marginCard().sheet(isPresented: $editing) { NavigationStack { Form { TextField("Planned", value: $category.monthlyLimit, format: .number).keyboardType(.decimalPad) }.navigationTitle(category.name).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { try? context.save(); editing = false } } } } }
+        }.marginCard().sheet(isPresented: $editing) { NavigationStack { Form {
+            Section("Planned each month") { TextField("Planned", value: $category.monthlyLimit, format: .number).keyboardType(.decimalPad) }
+            if category.isFund {
+                Section { TextField("Balance", value: $category.fundBalance, format: .number).keyboardType(.decimalPad); TextField("Target", value: $category.fundTarget, format: .number).keyboardType(.decimalPad) }
+                    header: { Text("Fund") } footer: { Text("Update the balance when you move money into this fund or spend from it.") }
+            }
+        }.navigationTitle(category.name).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } } }
+            // Swiping the sheet away skips Done, so clean up and save here. Negative amounts would corrupt every total.
+            .onDisappear { category.monthlyLimit = max(0, category.monthlyLimit); category.fundBalance = max(0, category.fundBalance); category.fundTarget = max(0, category.fundTarget); try? context.save() } } }
     }
 }
 
@@ -353,6 +361,7 @@ extension Int { var ordinal: String { let formatter = NumberFormatter(); formatt
 struct ActivityView: View {
     @Environment(\.modelContext) private var context
     @AppStorage("margin.bankSkippedTransactionIDs") private var skippedJSON = "[]"
+    @Query private var bookedJobs: [BookedJob]
     let transactions: [Transaction]
     @State private var search = ""; @State private var scope = "all"
     var filtered: [Transaction] { transactions.filter { (scope == "all" || $0.ledgerScope == scope) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.category.localizedCaseInsensitiveContains(search)) } }
@@ -369,6 +378,13 @@ struct ActivityView: View {
         var skipped = (try? JSONDecoder().decode([String].self, from: Data(skippedJSON.utf8))) ?? []
         skipped += removed.compactMap(\.externalID)
         if let data = try? JSONEncoder().encode(Array(Set(skipped)).sorted()), let value = String(data: data, encoding: .utf8) { skippedJSON = value }
+        // A booking whose only recorded payment is deleted goes back to booked; otherwise it would vanish from the
+        // forecast entirely (a paid booking with no payment expects nothing more).
+        let removedIDs = Set(removed.map(\.id)), removedJobIDs = Set(removed.compactMap(\.jobID))
+        let remainingPayments = Set(transactions.filter { $0.isIncome && !removedIDs.contains($0.id) }.compactMap(\.jobID))
+        for job in bookedJobs where job.status == "paid" || job.status == "settled" {
+            if let id = job.paidJobID, removedJobIDs.contains(id), !remainingPayments.contains(id) { job.status = "booked"; job.paidJobID = nil }
+        }
         removed.forEach(context.delete); try? context.save()
     }
 }
@@ -438,10 +454,40 @@ struct ReportMetric: View { let label: String; let value: Double; var body: some
 
 struct GoalsView: View {
     let goals: [SavingsGoal]
+    @State private var editing: SavingsGoal?
     var body: some View { ScrollView { VStack(alignment: .leading, spacing: 18) {
         Text("Goals").font(.largeTitle.bold()); Text("Savings is a promise to your future self.").foregroundStyle(.secondary)
-        ForEach(goals) { goal in VStack(alignment: .leading, spacing: 14) { Image(systemName: goal.icon).font(.title).foregroundStyle(Color.marginInk); Text(goal.name).font(.title2.bold()); Text("\(goal.saved.money) saved of \(goal.target.money)"); ProgressView(value: goal.target > 0 ? min(goal.saved/goal.target, 1) : 1).tint(.marginLime).scaleEffect(y: 2); Text("\(goal.target > 0 ? Int(goal.saved/goal.target*100) : 100)% complete").font(.caption.bold()).foregroundStyle(.secondary) }.marginCard() }
-    }.padding() }.background(Color.marginCream.ignoresSafeArea()).navigationBarHidden(true) }
+        ForEach(goals) { goal in VStack(alignment: .leading, spacing: 14) { Image(systemName: goal.icon).font(.title).foregroundStyle(Color.marginInk); Text(goal.name).font(.title2.bold()); Text("\(goal.saved.money) saved of \(goal.target.money)"); ProgressView(value: goal.target > 0 ? min(goal.saved/goal.target, 1) : 1).tint(.marginLime).scaleEffect(y: 2); Text("\(goal.target > 0 ? Int(goal.saved/goal.target*100) : 100)% complete").font(.caption.bold()).foregroundStyle(.secondary)
+            Button("Update progress") { editing = goal }.buttonStyle(.bordered).tint(.marginInk) }.marginCard() }
+    }.padding() }.background(Color.marginCream.ignoresSafeArea()).navigationBarHidden(true)
+        .sheet(item: $editing) { GoalEditView(goal: $0) } }
+}
+
+/// Records money moved into a goal, or corrects its totals. Without this a goal could never show progress.
+struct GoalEditView: View {
+    @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
+    let goal: SavingsGoal
+    @State private var added = ""; @State private var saved = ""; @State private var target = ""
+    /// Blank or "0" means zero; anything else must be a valid amount.
+    private func amountOrZero(_ text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty || Double(trimmed) == 0 { return 0 }
+        return Double(moneyInput: trimmed)
+    }
+    private var canSave: Bool { amountOrZero(added) != nil && amountOrZero(saved) != nil && Double(moneyInput: target) != nil }
+    var body: some View { NavigationStack { Form {
+        Section { TextField("Amount to add", text: $added).keyboardType(.decimalPad) } header: { Text("Add money") } footer: { Text("What you just moved into savings for \(goal.name).") }
+        Section("Totals") { LabeledContent("Saved so far") { TextField("0", text: $saved).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }; LabeledContent("Target") { TextField("Target", text: $target).keyboardType(.decimalPad).multilineTextAlignment(.trailing) } }
+    }.navigationTitle(goal.name).onAppear { saved = String(format: "%.2f", goal.saved); target = String(format: "%.2f", goal.target) }
+     .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(!canSave) }
+     } } }
+    private func save() {
+        guard let add = amountOrZero(added), let current = amountOrZero(saved), let goalTarget = Double(moneyInput: target) else { return }
+        goal.saved = current + add; goal.target = goalTarget
+        try? context.save(); dismiss()
+    }
 }
 
 struct TransactionRow: View {

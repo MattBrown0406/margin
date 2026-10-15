@@ -45,7 +45,9 @@ struct WidgetSnapshot: Codable, Equatable {
         let safe = SafeToSpend.compute(entries: entries, lines: lines, now: now, calendar: calendar)
         monthStart = calendar.startOfMonth(for: now); day = calendar.startOfDay(for: now)
         flexibleLimit = safe.flexibleLimit; spentToday = safe.spentToday
-        spentBeforeToday = safe.flexibleLimit - safe.flexibleLeft - safe.spentToday
+        // From the entries, not limit − flexibleLeft: flexibleLeft stops at 0, which would understate an overspend.
+        let flexibleNames = Set(lines.filter(\.isFlexible).map(\.name))
+        spentBeforeToday = entries.filter { $0.isPersonalExpense && flexibleNames.contains($0.category) && calendar.isSameMonth($0.date, now) }.total - safe.spentToday
     }
 
     /// The allowance at `now`, or nil when the snapshot is from another month (the app must refresh it).

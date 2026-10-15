@@ -90,7 +90,9 @@ struct AffordView: View {
         let monthLabel = monthOffset == 0 ? "this month" : targetMonth.formatted(.dateTime.month(.wide).year())
         let question = "Can I afford \(description.isEmpty ? "this" : description) for \(value.moneyExact) \(monthOffset == 0 ? "this month" : "in \(monthLabel)")?"
         do {
-            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+            let encoder = JSONEncoder()
+            // Calendar days in the person's time zone; .iso8601 is UTC and can shift a month start into the previous month.
+            encoder.dateEncodingStrategy = .formatted(ISO8601DateFormatter.marginDate)
             let data = try encoder.encode(context(verdict: verdict, description: description.isEmpty ? "Unnamed purchase" : description, amount: value))
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
             let reply = try await api.request("/v1/ask", method: "POST", body: ["question": question, "context": json], as: AskResponse.self).answer
@@ -101,7 +103,7 @@ struct AffordView: View {
     }
 
     private func context(verdict: AffordabilityVerdict, description: String, amount: Double) -> AskContext {
-        let calendar = Calendar.current, iso = Date.ISO8601FormatStyle().year().month().day()
+        let calendar = Calendar.current, iso = Date.ISO8601FormatStyle(timeZone: .current).year().month().day()   // UTC by default: "today" would be tomorrow after 5 PM Pacific
         let monthSpend = entries.filter { $0.isPersonalExpense && calendar.isSameMonth($0.date, now) }
         let goal = goals.first { $0.name.localizedCaseInsensitiveContains("peace") } ?? goals.first
         return AskContext(

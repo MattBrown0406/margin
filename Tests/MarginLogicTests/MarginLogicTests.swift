@@ -63,6 +63,14 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(snapshot.safeToSpend(at: day(2026, 10, 1), calendar: calendar) == nil)
         #expect(snapshot.safeToSpend(at: day(2026, 9, 20), calendar: calendar) == nil)
     }
+
+    @Test func widgetSnapshotKeepsTheRealOverspend() {
+        // $1,200 spent of a $900 limit: flexibleLeft stops at 0, but the snapshot must carry the real $1,200.
+        let snapshot = WidgetSnapshot(entries: [spend(1200, "Groceries", day(2026, 9, 5)), spend(25, "Fun", now)], lines: lines, now: now, calendar: calendar)
+        #expect(snapshot.spentBeforeToday == 1200)
+        #expect(snapshot.spentToday == 25)
+        #expect(snapshot.safeToSpend(at: now, calendar: calendar)?.dailyAllowance == 0)
+    }
 }
 
 @Suite struct ForecastTests {
@@ -381,5 +389,19 @@ private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "
         let safe = SafeToSpend.make(limit: 900, spentBeforeToday: 400, spentToday: 0, now: now, calendar: calendar)
         let v = Affordability.evaluate(amount: 3000, in: day(2026, 11, 15), now: now, safe: safe, forecast: f, calendar: calendar)
         #expect(v.level == .notYet)
+    }
+
+    // 5. "Covered by <month>" for a purchase too big for this month must not create a later shortfall either.
+    @Test func notThisMonthNeverSuggestsAMonthThatLeavesALaterOneShort() {
+        let nov = BookedJobInfo(id: UUID(), title: "Nov", expectedDate: day(2026, 11, 5), expectedGross: 13000, expectedNet: 9000)
+        let dec = BookedJobInfo(id: UUID(), title: "Dec", expectedDate: day(2026, 12, 5), expectedGross: 2000, expectedNet: 1000)
+        // Running totals: Oct 0, Nov 5,000, Dec 2,000, Jan −2,000 (already short without the purchase).
+        let f = CashFlowForecast.months(entries: [acmeNet(4000, day(2026, 10, 2), UUID())], booked: [nov, dec], plannedMonthly: 4000, now: now, count: 4, calendar: calendar)
+        let safe = SafeToSpend.make(limit: 900, spentBeforeToday: 400, spentToday: 0, now: now, calendar: calendar)
+        let big = Affordability.evaluate(amount: 3000, in: now, now: now, safe: safe, forecast: f, calendar: calendar)
+        #expect(big.level == .notYet)
+        #expect(big.fitsInMonth == nil)          // November alone has 5,000, but buying it then leaves December short
+        let small = Affordability.evaluate(amount: 1500, in: now, now: now, safe: safe, forecast: f, calendar: calendar)
+        #expect(small.fitsInMonth.map { calendar.isSameMonth($0, day(2026, 11, 1)) } == true)
     }
 }

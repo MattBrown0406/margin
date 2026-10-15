@@ -20,8 +20,8 @@ enum Affordability {
         let monthsAway = calendar.monthsBetween(now, month)
         let target = forecast.first { calendar.isSameMonth($0.monthStart, month) }
         let currentStart = calendar.startOfMonth(for: now)
-        // Earliest month (after this one) whose running total covers the purchase.
-        let fitsLater = forecast.first { $0.monthStart > currentStart && $0.monthStart >= calendar.startOfMonth(for: month) && $0.cumulative >= amount }?.monthStart
+        // Earliest month (after this one) where buying it leaves that month and the ones after it covered.
+        let fitsLater = forecast.first { $0.monthStart > currentStart && $0.monthStart >= calendar.startOfMonth(for: month) && headroom(at: $0, in: forecast) >= amount }?.monthStart
 
         if monthsAway <= 0 {
             // Only personal Net funds the plan. Until Net already received covers this month's plan, flexible
@@ -52,13 +52,7 @@ enum Affordability {
                                         newDailyAllowance: nil, fitsInMonth: fitsLater, suggestedMonthlySetAside: nil)
         }
 
-        // The purchase lowers the running total of its month and every month after it, so it must leave each of
-        // them covered — up to the first month that is already short without it (that shortfall is separate).
-        var running = target?.cumulative ?? 0
-        for later in forecast where later.monthStart > (target?.monthStart ?? month) {
-            if later.isRunningShort { break }
-            running = min(running, later.cumulative)
-        }
+        let running = target.map { headroom(at: $0, in: forecast) } ?? 0
         if running >= amount {
             return AffordabilityVerdict(level: running >= amount * 1.5 ? .comfortable : .tight,
                                         headline: "Yes, if booked work pays as expected.",
@@ -71,5 +65,17 @@ enum Affordability {
         return AffordabilityVerdict(level: .notYet, headline: "Not on what’s booked so far.",
                                     details: [position, "Setting aside \(setAside.money) a month from now would cover it."],
                                     newDailyAllowance: nil, fitsInMonth: fitsLater, suggestedMonthlySetAside: setAside)
+    }
+
+    /// What can be spent in `month` without leaving it or a later month short. A purchase lowers the running total
+    /// of its month and every month after it, so this is the lowest of those totals — up to the first later month
+    /// that is already short without it (that shortfall is separate).
+    static func headroom(at month: ForecastMonth, in forecast: [ForecastMonth]) -> Double {
+        var running = month.cumulative
+        for later in forecast where later.monthStart > month.monthStart {
+            if later.isRunningShort { break }
+            running = min(running, later.cumulative)
+        }
+        return running
     }
 }
