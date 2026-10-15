@@ -140,7 +140,7 @@ extension Transaction {
 }
 
 extension BudgetCategory {
-    var planLine: PlanLine { PlanLine(name: name, monthlyLimit: monthlyLimit, isFlexible: isFlexible, dueDay: dueDay) }
+    var planLine: PlanLine { PlanLine(name: name, monthlyLimit: monthlyLimit, isFlexible: isFlexible, dueDay: dueDay, isFund: isFund) }
 }
 
 /// Categories offered for the business ledger. Personal categories come from the user's budget.
@@ -182,4 +182,177 @@ enum StarterBudget {
         UserDefaults.standard.set(true, forKey: seededKey)
         try? context.save()
     }
+}
+
+// MARK: - Money tools (steady paycheck, taxes, assigning Net, debt payoff, net worth)
+
+/// Preferences for the money tools. One record; if iCloud delivers another device's copy, the oldest wins.
+@Model final class FinanceSettings {
+    var id: UUID = UUID()
+    var createdAt: Date = Date.distantPast
+    /// Steady paycheck: the monthly amount (0 = use the suggestion) and what's in the income buffer today.
+    var monthlyPaycheck: Double = 0
+    var incomeBuffer: Double = 0
+    /// Estimated taxes.
+    var filingStatus: String = FilingStatus.single.rawValue
+    var stateTaxRate: Double = 0
+    var otherIncome: Double = 0
+    var ownWages: Double = 0
+    var withholding: Double = 0
+    var priorYearTax: Double = 0
+    var priorYearHighIncome: Bool = false
+    var includeQBI: Bool = false
+    var taxLineName: String = "Tax reserve"
+    /// Correction to the tax reserve, which is otherwise worked out from records (Net assigned to taxes minus what
+    /// payments took out), so undoing or deleting either can never leave it wrong.
+    var taxReserveAdjustment: Double = 0
+    /// Debt payoff.
+    var debtStrategy: String = PayoffStrategy.snowball.rawValue
+    var extraDebtPayment: Double = 0
+    /// Assigning Net: where money goes once the plan is covered (a fund or goal name; empty = leave it unassigned).
+    var surplusTarget: String = ""
+    /// The last month ("2026-09") whose leftover flexible money was offered for a fund.
+    var lastRolloverMonthKey: String = ""
+    /// Merchants the person said aren't recurring.
+    var ignoredRecurringKeys: [String] = []
+
+    init() { self.id = UUID(); self.createdAt = .now }
+
+    var taxProfile: TaxProfile {
+        TaxProfile(filingStatus: FilingStatus(rawValue: filingStatus) ?? .single, stateRate: stateTaxRate, otherIncome: otherIncome, ownWages: ownWages, withholding: withholding,
+                   priorYearTax: priorYearTax, priorYearHighIncome: priorYearHighIncome, includeQBI: includeQBI)
+    }
+    var strategy: PayoffStrategy { PayoffStrategy(rawValue: debtStrategy) ?? .snowball }
+
+    /// The record in use: the oldest (ties by id), so every device agrees.
+    static func pick(_ all: [FinanceSettings]) -> FinanceSettings? {
+        all.min { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
+    }
+    /// Folds a duplicate (another device's copy) into this record: anything this one still has at its default is
+    /// taken from the other, and ignored merchants are combined.
+    func absorb(_ other: FinanceSettings) {
+        if monthlyPaycheck == 0 { monthlyPaycheck = other.monthlyPaycheck }
+        if incomeBuffer == 0 { incomeBuffer = other.incomeBuffer }
+        if filingStatus == FilingStatus.single.rawValue { filingStatus = other.filingStatus }
+        if stateTaxRate == 0 { stateTaxRate = other.stateTaxRate }
+        if otherIncome == 0 { otherIncome = other.otherIncome }
+        if ownWages == 0 { ownWages = other.ownWages }
+        if withholding == 0 { withholding = other.withholding }
+        if priorYearTax == 0 { priorYearTax = other.priorYearTax }
+        priorYearHighIncome = priorYearHighIncome || other.priorYearHighIncome
+        includeQBI = includeQBI || other.includeQBI
+        if taxLineName == "Tax reserve" { taxLineName = other.taxLineName }
+        if taxReserveAdjustment == 0 { taxReserveAdjustment = other.taxReserveAdjustment }
+        if debtStrategy == PayoffStrategy.snowball.rawValue { debtStrategy = other.debtStrategy }
+        if extraDebtPayment == 0 { extraDebtPayment = other.extraDebtPayment }
+        if surplusTarget.isEmpty { surplusTarget = other.surplusTarget }
+        lastRolloverMonthKey = max(lastRolloverMonthKey, other.lastRolloverMonthKey)
+        ignoredRecurringKeys = Array(Set(ignoredRecurringKeys + other.ignoredRecurringKeys)).sorted()
+    }
+
+    /// The record in use, created on first need.
+    @MainActor static func current(in context: ModelContext) -> FinanceSettings {
+        if let existing = pick((try? context.fetch(FetchDescriptor<FinanceSettings>())) ?? []) { return existing }
+        let settings = FinanceSettings(); context.insert(settings); try? context.save()
+        return settings
+    }
+}
+
+@Model final class Debt {
+    var id: UUID = UUID()
+    var name: String = ""
+    /// `card`, `loan`, or `other`.
+    var kind: String = "card"
+    var balance: Double = 0
+    var apr: Double = 0
+    var minimumPayment: Double = 0
+    var customRank: Int = 0
+    /// A connected bank account whose balance this debt follows.
+    var linkedAccountID: String?
+    var createdAt: Date = Date.distantPast
+
+    init(name: String, kind: String = "card", balance: Double, apr: Double, minimumPayment: Double, customRank: Int = 0, linkedAccountID: String? = nil) {
+        self.id = UUID(); self.name = name; self.kind = kind; self.balance = balance; self.apr = apr
+        self.minimumPayment = minimumPayment; self.customRank = customRank; self.linkedAccountID = linkedAccountID; self.createdAt = .now
+    }
+    var info: DebtInfo { DebtInfo(id: id, name: name, balance: balance, apr: apr, minimumPayment: minimumPayment, customRank: customRank) }
+}
+
+@Model final class Asset {
+    var id: UUID = UUID()
+    var name: String = ""
+    /// `cash`, `investment`, `property`, `vehicle`, or `other`.
+    var kind: String = "cash"
+    var value: Double = 0
+    var createdAt: Date = Date.distantPast
+
+    init(name: String, kind: String, value: Double) { self.id = UUID(); self.name = name; self.kind = kind; self.value = value; self.createdAt = .now }
+}
+
+/// Net worth as of a month, kept for the trend (one per month; the latest visit to Net worth updates it).
+@Model final class NetWorthSnapshot {
+    var id: UUID = UUID()
+    var monthStart: Date = Date.distantPast
+    /// "2026-10", the month in every time zone (`monthStart` is only for charting).
+    var monthKey: String = ""
+    var assets: Double = 0
+    var debts: Double = 0
+    var updatedAt: Date = Date.distantPast
+
+    init(monthStart: Date, assets: Double, debts: Double) {
+        self.id = UUID(); self.monthStart = monthStart; self.monthKey = Calendar.current.monthKey(for: monthStart)
+        self.assets = assets; self.debts = debts; self.updatedAt = .now
+    }
+    var netWorth: Double { assets - debts }
+}
+
+/// Part of the month's Net assigned to a plan line. One assignment (`batchID`) can be undone as a whole.
+@Model final class NetAllocation {
+    var id: UUID = UUID()
+    var batchID: UUID = UUID()
+    var date: Date = Date.now
+    var monthStart: Date = Date.distantPast
+    /// "2026-10": the month this assignment belongs to, the same in every time zone.
+    var monthKey: String = ""
+    var target: String = ""
+    /// An `AllocationTarget.Kind` raw value, or `rollover` for last month's leftover moved to a fund.
+    var kind: String = ""
+    var amount: Double = 0
+
+    init(batchID: UUID, date: Date, monthStart: Date, target: String, kind: String, amount: Double) {
+        self.id = UUID(); self.batchID = batchID; self.date = date; self.monthStart = monthStart; self.monthKey = Calendar.current.monthKey(for: monthStart)
+        self.target = target; self.kind = kind; self.amount = amount
+    }
+}
+
+/// The tax reserve, from records: Net assigned to taxes, minus what tax payments took out of it, plus any correction.
+enum TaxReserve {
+    static func balance(adjustment: Double, allocations: [NetAllocation], payments: [EstimatedTaxPayment]) -> Double {
+        adjustment + allocations.filter { $0.kind == AllocationTarget.Kind.tax.rawValue }.reduce(0) { $0 + $1.amount } - payments.reduce(0) { $0 + $1.reserveUsed }
+    }
+}
+
+@Model final class EstimatedTaxPayment {
+    var id: UUID = UUID()
+    var date: Date = Date.now
+    var amount: Double = 0
+    var taxYear: Int = 0
+    var isState: Bool = false
+    /// How much of it came out of the tax reserve, so deleting the payment puts back exactly that.
+    var reserveUsed: Double = 0
+
+    init(date: Date, amount: Double, taxYear: Int, isState: Bool, reserveUsed: Double) {
+        self.id = UUID(); self.date = date; self.amount = amount; self.taxYear = taxYear; self.isState = isState; self.reserveUsed = reserveUsed
+    }
+}
+
+/// Moves money into a sinking fund or goal by name. A fund and a goal with the same name (the Peace Number) are one
+/// pot, so both move together. Returns false when nothing by that name exists.
+@MainActor @discardableResult
+func addToFundOrGoal(_ name: String, amount: Double, categories: [BudgetCategory], goals: [SavingsGoal]) -> Bool {
+    let matches: (String) -> Bool = { $0.caseInsensitiveCompare(name) == .orderedSame }
+    let fund = categories.first { $0.isFund && matches($0.name) }, goal = goals.first { matches($0.name) }
+    if let fund { fund.fundBalance = max(0, fund.fundBalance + amount) }
+    if let goal { goal.saved = max(0, (fund?.fundBalance ?? goal.saved + amount)) }
+    return fund != nil || goal != nil
 }

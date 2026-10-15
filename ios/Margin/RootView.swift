@@ -8,6 +8,7 @@ struct RootView: View {
     @Query private var categories: [BudgetCategory]
     @Query private var goals: [SavingsGoal]
     @Query private var bookedJobs: [BookedJob]
+    @Query private var financeSettings: [FinanceSettings]
     @AppStorage("margin.seeded") private var seeded = false
     @AppStorage("margin.ledgerV2Migrated") private var ledgerV2Migrated = false
     @State private var selectedTab = 0
@@ -34,12 +35,14 @@ struct RootView: View {
         // iCloud can deliver another device's starter budget after this one seeded its own.
         .onChange(of: categories.count) { removeSyncDuplicates() }
         .onChange(of: goals.count) { removeSyncDuplicates() }
+        .onChange(of: financeSettings.count) { removeSyncDuplicates() }
         // Keep the widget current whenever today's numbers change, and when returning to the app.
         .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
         .onChange(of: scenePhase) { _, phase in if phase == .active { WidgetBridge.publish(widgetSnapshot) } }
     }
 
     private func seedAndMigrateIfNeeded() {
+        _ = FinanceSettings.current(in: context)   // the money tools' settings (the rollover card needs them from day one)
         if !ledgerV2Migrated {
             // Existing income is preserved as money received by the business. We do not
             // invent a personal transfer; the user records Net only when it really moves.
@@ -73,6 +76,10 @@ struct RootView: View {
         }
         for group in Dictionary(grouping: goals, by: { $0.name.lowercased() }).values where group.count > 1 {
             survivorsFirst(group, createdAt: \.createdAt, id: \.id).dropFirst().forEach { context.delete($0); changed = true }
+        }
+        // Each device may create money-tool settings before iCloud delivers the other's: fold them into the oldest.
+        if financeSettings.count > 1, let keep = FinanceSettings.pick(financeSettings) {
+            for other in financeSettings where other.id != keep.id { keep.absorb(other); context.delete(other); changed = true }
         }
         if changed { try? context.save() }
     }
@@ -123,6 +130,8 @@ struct TodayView: View {
                         Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary)
                     }.marginCard()
                 }.buttonStyle(.plain)
+                LeftToAssignCard(transactions: transactions)
+                RolloverCard(transactions: transactions, categories: categories)
                 if let shortfall {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.marginCoral)
@@ -141,6 +150,7 @@ struct TodayView: View {
                         Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary)
                     }.marginCard()
                 }.buttonStyle(.plain)
+                MoneyToolsCard()
                 HStack { Text("Recent activity").font(.title3.bold()); Spacer(); NavigationLink("See all") { ActivityView(transactions: transactions) }.font(.subheadline.bold()) }
                 if categories.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -229,6 +239,7 @@ struct PlanView: View {
                     Spacer(); Text(bill.monthlyLimit.money).bold()
                 }.marginCard()
             }
+            RecurringChargesSection(transactions: transactions, categories: categories, bookedJobs: bookedJobs).padding(.top, 8)
         }
     }
 }

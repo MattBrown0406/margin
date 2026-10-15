@@ -31,6 +31,16 @@
 		44A124E7D95CB6B62A822E7C /* SafeToSpend.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */; };
 		A19551B000DED49BD8D51B6D /* MarginWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 826BBA54A564157A39A09436 /* MarginWidget.swift */; };
 		F47B24CDBECDC3924CD55B3E /* MarginWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C239DBD297B956F8913F844A /* MarginWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2574E21FF5E90489879E9ADE /* MoneyTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4863595B93DEA59E1236D611 /* MoneyTools.swift */; };
+		004769DC4DB57F9145A3A401 /* TaxPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A93909117376C86EA010A1A /* TaxPlannerView.swift */; };
+		4AD93146AB6E98025A6FDCBD /* DebtPayoffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43063F3FE61BF5E45FFE4F58 /* DebtPayoffView.swift */; };
+		1FEC946058B99C3D2548E13D /* NetWorthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1223679AE857F380D646311E /* NetWorthView.swift */; };
+		D50CC37094640BD250E56158 /* RecurringView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE96B094C9DE08CA30FEB48 /* RecurringView.swift */; };
+		791191016B2082E9DA9111BD /* DebtPayoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF90235415E05C7FB36D787B /* DebtPayoff.swift */; };
+		948709412AD2494849AF04A9 /* SteadyPaycheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2BF94C68E9E6779E9B754E /* SteadyPaycheck.swift */; };
+		89490CE05C26EF47840EEB76 /* EstimatedTax.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0ECAE61E804065E605002EB /* EstimatedTax.swift */; };
+		02ED36BA8366A3C71A513D69 /* NetAllocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F11071118C97735AF6EB7F8 /* NetAllocation.swift */; };
+		CD1080A364F2558C80EE6656 /* Recurring.swift in Sources */ = {isa = PBXBuildFile; fileRef = F325CF658CD7654AED0BB2F0 /* Recurring.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +79,16 @@
 		D428969F2CE222BFCB49F38A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9DB4769C7E715B7FC11C0ECC /* MarginWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MarginWidget.entitlements; sourceTree = "<group>"; };
 		C239DBD297B956F8913F844A /* MarginWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MarginWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		4863595B93DEA59E1236D611 /* MoneyTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyTools.swift; sourceTree = "<group>"; };
+		4A93909117376C86EA010A1A /* TaxPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaxPlannerView.swift; sourceTree = "<group>"; };
+		43063F3FE61BF5E45FFE4F58 /* DebtPayoffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebtPayoffView.swift; sourceTree = "<group>"; };
+		1223679AE857F380D646311E /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
+		EFE96B094C9DE08CA30FEB48 /* RecurringView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringView.swift; sourceTree = "<group>"; };
+		AF90235415E05C7FB36D787B /* DebtPayoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebtPayoff.swift; sourceTree = "<group>"; };
+		0A2BF94C68E9E6779E9B754E /* SteadyPaycheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SteadyPaycheck.swift; sourceTree = "<group>"; };
+		A0ECAE61E804065E605002EB /* EstimatedTax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EstimatedTax.swift; sourceTree = "<group>"; };
+		1F11071118C97735AF6EB7F8 /* NetAllocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetAllocation.swift; sourceTree = "<group>"; };
+		F325CF658CD7654AED0BB2F0 /* Recurring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recurring.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -123,6 +143,11 @@
 				BD9E1A7781DDD5E19C959A76 /* AccountView.swift */,
 				C121ED7522642FF3F703F24B /* AffordView.swift */,
 				9D9D1958E47048A6CF0288EE /* ForecastView.swift */,
+				EFE96B094C9DE08CA30FEB48 /* RecurringView.swift */,
+				1223679AE857F380D646311E /* NetWorthView.swift */,
+				43063F3FE61BF5E45FFE4F58 /* DebtPayoffView.swift */,
+				4A93909117376C86EA010A1A /* TaxPlannerView.swift */,
+				4863595B93DEA59E1236D611 /* MoneyTools.swift */,
 				320E8439B00086C397A59960 /* Intents.swift */,
 				149BC7B02E3C9E25122B9EE1 /* MarginService.swift */,
 				0CD10A258FB74B29882AAD76 /* BankSync.swift */,
@@ -152,6 +177,11 @@
 				42AF58B43882B1F9BDC15E26 /* Money.swift */,
 				AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */,
 				A5212DD21910B6B29901142D /* Forecast.swift */,
+				F325CF658CD7654AED0BB2F0 /* Recurring.swift */,
+				1F11071118C97735AF6EB7F8 /* NetAllocation.swift */,
+				A0ECAE61E804065E605002EB /* EstimatedTax.swift */,
+				0A2BF94C68E9E6779E9B754E /* SteadyPaycheck.swift */,
+				AF90235415E05C7FB36D787B /* DebtPayoff.swift */,
 				E5BDCBEE92CB05AF26CB4045 /* JobProfit.swift */,
 				74F352E0341128E92F817089 /* Affordability.swift */,
 			);
@@ -277,12 +307,22 @@
 				90BCEA03CD3DB3383A223DBB /* MarginService.swift in Sources */,
 				4A26755F1979AAC34B463BD1 /* AccountView.swift in Sources */,
 				0BB6019E8781C72F88AA82BD /* ForecastView.swift in Sources */,
+				D50CC37094640BD250E56158 /* RecurringView.swift in Sources */,
+				1FEC946058B99C3D2548E13D /* NetWorthView.swift in Sources */,
+				4AD93146AB6E98025A6FDCBD /* DebtPayoffView.swift in Sources */,
+				004769DC4DB57F9145A3A401 /* TaxPlannerView.swift in Sources */,
+				2574E21FF5E90489879E9ADE /* MoneyTools.swift in Sources */,
 				37D5CF7B5EA93FD6D4935098 /* AffordView.swift in Sources */,
 				FDACCC537689EC95B6C0E8C6 /* Intents.swift in Sources */,
 				4DBE6D55A4A24C133B9BB41A /* Ledger.swift in Sources */,
 				D2FBC3CC410639B1A70E85B8 /* Money.swift in Sources */,
 				C55E2B676A9899C7AE52A88C /* SafeToSpend.swift in Sources */,
 				838C47ABB6DDC310D6D97B88 /* Forecast.swift in Sources */,
+				CD1080A364F2558C80EE6656 /* Recurring.swift in Sources */,
+				02ED36BA8366A3C71A513D69 /* NetAllocation.swift in Sources */,
+				89490CE05C26EF47840EEB76 /* EstimatedTax.swift in Sources */,
+				948709412AD2494849AF04A9 /* SteadyPaycheck.swift in Sources */,
+				791191016B2082E9DA9111BD /* DebtPayoff.swift in Sources */,
 				0F5A9E27E12B96E2DA4EF7E6 /* JobProfit.swift in Sources */,
 				FDDCAE7CB401FFC7A822B14D /* Affordability.swift in Sources */,
 			);

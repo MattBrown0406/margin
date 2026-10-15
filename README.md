@@ -16,8 +16,6 @@ Margin answers one useful daily question: **What can I safely spend today and st
 - Monthly reports with business retained cash, personal margin, and ledger/category filters
 - Real `.xlsx` export with Summary, Income & Jobs, Expenses, Budget, and Category Totals worksheets
 - Savings goals with progress tracking
-- A 24-hour “pause list” for wants, creating friction before impulse purchases
-- Weekly insights that are specific and actionable
 - Optional read-only Plaid account linking for Bank of America and other supported institutions
 - Connected balances, pending/posted handling, a review-before-import inbox, deduplication, and disconnect controls
 - Manual/local budgeting remains fully usable without a bank connection
@@ -26,6 +24,13 @@ Margin answers one useful daily question: **What can I safely spend today and st
 - Profit per job: tag business expenses to the job they served; per-job margin, and a year-to-date Schedule C summary in Reports and the Excel export
 - Home-screen and lock-screen Safe to Spend widget, plus Siri/Shortcuts: "Log an expense in Margin", "What can I spend today in Margin"
 - "Can I afford it?": an on-device verdict for this month or a future month, with an optional plain-English plan from Ask Margin (Claude) that only ever sees budget totals
+- Money tools (Today › Money tools):
+  - **Steady paycheck**: turns job-based income into one monthly paycheck from an income buffer (suggested from the last 12 months of Net), with buffer runway and a month-by-month projection from booked work
+  - **Taxes**: quarterly estimated taxes from the business ledger (2026 federal brackets and standard deduction, self-employment tax, optional simplified QBI, flat state rate, prior-year safe harbor), the share of each job's Gross to set aside, the due-date schedule, payments, and a tax reserve
+  - **Assign Net**: every Net transfer gets a job — bills due before the next expected job first, then taxes, funds, the rest of the plan, and everyday money; extra goes to a chosen fund; each assignment can be undone. At the start of a month, last month's unspent flexible money can roll into a fund
+  - **Debt payoff**: a fixed monthly debt payment (all minimums plus an extra amount); you choose which debt goes first (smallest balance, highest rate, highest interest cost, fastest freed-up cash flow, or your own order), and each paid-off debt's payment rolls into the next. Shows the debt-free date, interest, and savings versus minimums only
+  - **Net worth**: what you own (entered or from connected accounts) minus what you owe, with a monthly trend
+- Plan › Bills lists what's due before the next job pays and recurring charges found in your transactions (subscriptions, price increases, charges that may have stopped)
 
 ## Interactive HTML prototype
 Open `web/index.html` directly, or run:
@@ -72,7 +77,7 @@ The app now uses capabilities that need a paid Apple Developer team. In Xcode, s
 | Sign in with Apple | — | Signing in to the bank service and Ask Margin |
 | Background Modes › Remote notifications | — | CloudKit sync pushes |
 
-Before a TestFlight or App Store build, open the CloudKit Console and **deploy the schema from Development to Production**; otherwise production sync fails silently. Run the app once in Development after any model change so the schema is up to date.
+Before a TestFlight or App Store build, open the CloudKit Console and **deploy the schema from Development to Production**; otherwise production sync fails silently. New record types (FinanceSettings, Debt, Asset, NetWorthSnapshot, NetAllocation, EstimatedTaxPayment) need this deploy too. Run the app once in Development after any model change so the schema is up to date.
 
 If you change the bundle prefix, update `ios/Margin/Margin.entitlements`, `ios/MarginWidget/MarginWidget.entitlements`, and `WidgetSnapshot.appGroup`. Without iCloud the app quietly keeps data on the device; sync can also be turned off in Settings.
 
@@ -81,7 +86,7 @@ New installs start with the starter budget only (no sample transactions), becaus
 ## Tests
 
 ```bash
-swift test            # money logic: safe-to-spend, forecast, job profit, Schedule C, affordability
+swift test            # money logic: safe-to-spend, forecast, job profit, Schedule C, affordability, debt payoff, taxes, paycheck, Net assignment, recurring
 cd backend && npm test
 ```
 
