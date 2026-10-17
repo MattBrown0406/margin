@@ -29,12 +29,17 @@ struct TransactionEditView: View {
         return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.jobID != nil && ($0.date >= cutoff || $0.jobID == tx.jobID) }
     }
     private var value: Double? { Double(moneyInput: amount) }
-    /// For a Net transfer edited lower: how far this month's Net would fall below what's already assigned from it.
+    /// For an edited Net transfer: how far this month's assignable Net (this month's Net plus late Net carried in from
+    /// last month, as Assign Net counts it) would fall below what's already assigned — counting the edit, including
+    /// moving the transfer out of this month.
     private var netOverAssigned: Double? {
-        guard tx.incomeKind == "net", tx.ledgerScope == "personal", let value, Calendar.current.isDate(date, equalTo: .now, toGranularity: .month) else { return nil }
-        let otherNet = NetAssignment.monthNet(transactions) - (Calendar.current.isDate(tx.date, equalTo: .now, toGranularity: .month) ? tx.amount : 0)
-        let assigned = NetAssignment.assignedThisMonth(allocations).reduce(0) { $0 + $1.amount }
-        let gap = assigned - (otherNet + value)
+        guard tx.incomeKind == "net", tx.ledgerScope == "personal", let value else { return nil }
+        let calendar = Calendar.current
+        let wasThisMonth = calendar.isDate(tx.date, equalTo: .now, toGranularity: .month), isThisMonth = calendar.isDate(date, equalTo: .now, toGranularity: .month)
+        guard wasThisMonth || isThisMonth else { return nil }
+        let available = NetAssignment.monthNet(transactions) - (wasThisMonth ? tx.amount : 0) + (isThisMonth ? value : 0)
+            + NetAssignment.carriedIn(transactions: transactions, allocations: allocations)
+        let gap = NetAssignment.assignedThisMonth(allocations).reduce(0) { $0 + $1.amount } - available
         return gap > 0.5 ? gap : nil
     }
     private var canSave: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value != nil && (tx.isIncome || categoryOptions.contains(category)) }
@@ -50,7 +55,7 @@ struct TransactionEditView: View {
             Section {
                 LabeledContent("Type", value: tx.incomeKind == "gross" ? "Gross received by the business" : tx.incomeKind == "net" ? "Net transferred to personal" : "Income")
                 if let over = netOverAssigned {
-                    Label("This month’s Net would be \(over.money) less than what’s already assigned. Undo an assignment in Assign Net to match.", systemImage: "exclamationmark.triangle.fill")
+                    Label("This month would have \(over.money) more assigned than Net to assign. Undo an assignment in Assign Net to match.", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(Color.marginCoral)
                 }
             } footer: { Text("To change the type, delete this entry and add it again.") }
@@ -167,10 +172,18 @@ struct TaxSetAsideCard: View {
     var body: some View {
         let settings = FinanceSettings.pick(settingsList)
         let pending = JobTaxSetAside.pending(transactions: transactions, allocations: allocations, since: settings?.taxSetAsideSince)
-        if let job = pending.first {
-            let rate = JobTaxSetAside.rate(transactions: transactions, settings: settings, year: JobTaxSetAside.year(of: job))
-            if rate > 0 { card(job, rate: rate, more: pending.count - 1) }
-        }
+        // The newest job whose tax year has something to estimate (a year with no profit yet has a 0% rate).
+        let offer: (job: Transaction, rate: Double)? = {
+            var rates: [Int: Double] = [:]
+            for job in pending {
+                let year = JobTaxSetAside.year(of: job)
+                let rate = rates[year] ?? JobTaxSetAside.rate(transactions: transactions, settings: settings, year: year)
+                rates[year] = rate
+                if rate > 0 { return (job, rate) }
+            }
+            return nil
+        }()
+        if let offer { card(offer.job, rate: offer.rate, more: pending.count - 1) }
     }
 
     @ViewBuilder private func card(_ job: Transaction, rate: Double, more: Int) -> some View {
@@ -230,11 +243,10 @@ enum Reminders {
     @MainActor static func reschedule(context: ModelContext, now: Date = .now) async {
         let center = UNUserNotificationCenter.current()
         let ours = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
-        center.removePendingNotificationRequests(withIdentifiers: ours)
         guard let settings = FinanceSettings.pick((try? context.fetch(FetchDescriptor<FinanceSettings>())) ?? []),
-              settings.remindBills || settings.remindNet || settings.remindTaxes else { return }
+              settings.remindBills || settings.remindNet || settings.remindTaxes else { center.removePendingNotificationRequests(withIdentifiers: ours); return }
         let status = await center.notificationSettings().authorizationStatus
-        guard status == .authorized || status == .provisional else { return }
+        guard status == .authorized || status == .provisional else { center.removePendingNotificationRequests(withIdentifiers: ours); return }
 
         let transactions = (try? context.fetch(FetchDescriptor<Transaction>())) ?? []
         let categories = (try? context.fetch(FetchDescriptor<BudgetCategory>())) ?? []
@@ -259,11 +271,16 @@ enum Reminders {
                                           leftToAssign: NetAssignment.leftToAssign(transactions: transactions, allocations: allocations, now: now), netArrived: netArrived,
                                           nextTaxDue: taxDue, includeBills: settings.remindBills, includeNet: settings.remindNet,
                                           includeTaxes: settings.remindTaxes, now: now)
-        for reminder in plans.prefix(50) {   // iOS keeps at most 64 pending per app
+        // Add (same id replaces) before removing what's no longer planned, so being suspended partway through never
+        // leaves the person with no reminders.
+        let keep = Array(plans.prefix(50))   // iOS keeps at most 64 pending per app
+        for reminder in keep {
             let content = UNMutableNotificationContent(); content.title = reminder.title; content.body = reminder.body; content.sound = .default
             let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.date)
             try? await center.add(UNNotificationRequest(identifier: prefix + reminder.id, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)))
         }
+        let planned = Set(keep.map { prefix + $0.id })
+        center.removePendingNotificationRequests(withIdentifiers: ours.filter { !planned.contains($0) })
     }
 
     /// Asks for permission the first time a reminder is turned on. False if the person declined (now or before).

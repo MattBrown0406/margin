@@ -448,7 +448,20 @@ struct ActivityView: View {
         let removedJobs = Set(removed.filter { $0.isIncome && $0.incomeKind == "gross" }.compactMap { $0.jobID?.uuidString })
         let stillThere = Set(transactions.filter { $0.isIncome && $0.incomeKind == "gross" && !removedIDs.contains($0.id) }.compactMap { $0.jobID?.uuidString })
         // Its money really moved to tax savings, though: what was set aside stays in the reserve (as a correction).
-        let orphaned = allocations.filter { JobTaxSetAside.isDecision($0) && removedJobs.contains($0.target) && !stillThere.contains($0.target) }
+        // If the same payment is still recorded (a manual entry deleted in favor of its bank import), the set-aside
+        // moves to that entry instead, so it isn't offered — and counted — again.
+        var orphaned = allocations.filter { JobTaxSetAside.isDecision($0) && removedJobs.contains($0.target) && !stillThere.contains($0.target) }
+        let decided = Set(allocations.filter(JobTaxSetAside.isDecision).map(\.target))
+        var claimed = Set<String>()
+        for setAside in orphaned where setAside.kind == AllocationKinds.grossTax {
+            guard let gone = removed.first(where: { $0.jobID?.uuidString == setAside.target }),
+                  let twin = transactions.first(where: { t in
+                      guard t.isIncome, t.incomeKind == "gross", !removedIDs.contains(t.id), let id = t.jobID?.uuidString, !decided.contains(id), !claimed.contains(id) else { return false }
+                      return abs(t.amount - gone.amount) < 0.005 && abs(t.date.timeIntervalSince(gone.date)) <= 3 * 86_400
+                  }), let twinID = twin.jobID?.uuidString else { continue }
+            setAside.target = twinID; claimed.insert(twinID)
+            orphaned.removeAll { $0.id == setAside.id }
+        }
         let kept = orphaned.filter { $0.kind == AllocationKinds.grossTax }.reduce(0) { $0 + $1.amount }
         if kept > 0 { FinanceSettings.current(in: context).taxReserveAdjustment += kept }
         orphaned.forEach(context.delete)

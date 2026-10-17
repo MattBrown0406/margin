@@ -181,8 +181,8 @@ struct AssignNetView: View {
         var assigned = Dictionary(thisMonth.filter { $0.kind != AllocationTarget.Kind.extra.rawValue }.map { ($0.target, $0.amount) }, uniquingKeysWith: +)
         // Tax set aside from this month's job payments already covers that much of the month's tax line.
         let key = Calendar.current.monthKey(for: .now), taxLine = settings?.taxLineName ?? "Tax reserve"
-        // Counts set-asides for this month's jobs and set-asides made this month (Net often lags its job's Gross).
-        assigned[taxLine, default: 0] += allocations.filter { $0.kind == AllocationKinds.grossTax && ($0.monthKey == key || Calendar.current.monthKey(for: $0.date) == key) }.reduce(0) { $0 + $1.amount }
+        // Each counts once, in the later of its job's month and the month it was made (Net usually lags its job's Gross).
+        assigned[taxLine, default: 0] += allocations.filter { $0.kind == AllocationKinds.grossTax && max($0.monthKey, Calendar.current.monthKey(for: $0.date)) == key }.reduce(0) { $0 + $1.amount }
         let spent = Dictionary(transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }
             .map { ($0.category, $0.amount) }, uniquingKeysWith: +)
         let targets = NetAllocator.targets(lines: categories.map(\.planLine), taxLineName: settings?.taxLineName ?? "Tax reserve", assigned: assigned, spent: spent)
