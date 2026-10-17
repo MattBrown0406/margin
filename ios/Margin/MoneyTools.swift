@@ -74,8 +74,8 @@ struct LeftToAssignCard: View {
 }
 
 enum NetAssignment {
-    /// Allocation kinds that come out of this month's Net (a rollover moves last month's leftover instead).
-    static func isFromNet(_ kind: String) -> Bool { kind != "rollover" }
+    /// Allocation kinds that come out of this month's Net (a rollover or a set-aside from Gross doesn't).
+    static func isFromNet(_ kind: String) -> Bool { AllocationKinds.isFromNet(kind) }
 
     static func monthNet(_ transactions: [Transaction], now: Date = .now) -> Double {
         transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: now, toGranularity: .month) }.reduce(0) { $0 + $1.amount }
@@ -178,7 +178,10 @@ struct AssignNetView: View {
     private var surplusOptions: [String] { Array(Set(categories.filter(\.isFund).map(\.name) + goals.map(\.name))).sorted() }
 
     private var suggestions: [AllocationLine] {
-        let assigned = Dictionary(thisMonth.filter { $0.kind != AllocationTarget.Kind.extra.rawValue }.map { ($0.target, $0.amount) }, uniquingKeysWith: +)
+        var assigned = Dictionary(thisMonth.filter { $0.kind != AllocationTarget.Kind.extra.rawValue }.map { ($0.target, $0.amount) }, uniquingKeysWith: +)
+        // Tax set aside from this month's job payments already covers that much of the month's tax line.
+        let key = Calendar.current.monthKey(for: .now), taxLine = settings?.taxLineName ?? "Tax reserve"
+        assigned[taxLine, default: 0] += allocations.filter { $0.kind == AllocationKinds.grossTax && $0.monthKey == key }.reduce(0) { $0 + $1.amount }
         let spent = Dictionary(transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }
             .map { ($0.category, $0.amount) }, uniquingKeysWith: +)
         let targets = NetAllocator.targets(lines: categories.map(\.planLine), taxLineName: settings?.taxLineName ?? "Tax reserve", assigned: assigned, spent: spent)

@@ -38,7 +38,11 @@ struct RootView: View {
         .onChange(of: financeSettings.count) { removeSyncDuplicates() }
         // Keep the widget current whenever today's numbers change, and when returning to the app.
         .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { WidgetBridge.publish(widgetSnapshot) } }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { WidgetBridge.publish(widgetSnapshot) }
+            // Reminders are rebuilt from the latest numbers whenever the app opens or goes to the background.
+            if phase == .active || phase == .background { Task { await Reminders.reschedule(context: context) } }
+        }
     }
 
     private func seedAndMigrateIfNeeded() {
@@ -89,6 +93,7 @@ struct TodayView: View {
     @Environment(\.modelContext) private var context
     let transactions: [Transaction]; let categories: [BudgetCategory]; let goals: [SavingsGoal]; let bookedJobs: [BookedJob]
     @State private var showAfford = false
+    @State private var editingTx: Transaction?
     private var personalExpenses: [Transaction] { transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var monthExpenses: Double { personalExpenses.reduce(0) { $0 + $1.amount } }
     private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: .now) }
@@ -131,6 +136,7 @@ struct TodayView: View {
                     }.marginCard()
                 }.buttonStyle(.plain)
                 LeftToAssignCard(transactions: transactions)
+                TaxSetAsideCard(transactions: transactions)
                 RolloverCard(transactions: transactions, categories: categories)
                 if let shortfall {
                     HStack(alignment: .top, spacing: 12) {
@@ -159,7 +165,7 @@ struct TodayView: View {
                     }.marginCard()
                 }
                 else if transactions.isEmpty { Text("Nothing recorded yet. Tap Add when you spend or when a job pays.").font(.subheadline).foregroundStyle(.secondary) }
-                ForEach(transactions.prefix(4)) { TransactionRow(tx: $0) }
+                ForEach(transactions.prefix(4)) { tx in Button { editingTx = tx } label: { TransactionRow(tx: tx).contentShape(Rectangle()) }.buttonStyle(.plain) }
                 if let goal = goals.first {
                     NavigationLink { GoalsView(goals: goals) } label: {
                         VStack(alignment: .leading, spacing: 12) {
@@ -173,6 +179,7 @@ struct TodayView: View {
             }.padding()
         }.background(Color.marginCream.ignoresSafeArea()).navigationBarHidden(true)
         .sheet(isPresented: $showAfford) { AffordView(transactions: transactions, categories: categories, bookedJobs: bookedJobs, goals: goals) }
+        .sheet(item: $editingTx) { TransactionEditView(tx: $0) }
     }
 }
 
@@ -289,6 +296,7 @@ struct InterventionIncomeView: View {
                 HStack { Text("Job expenses \(spentOnJob.money)"); Spacer(); Text("Profit \((job.amount - spentOnJob).money)\(job.amount > 0 ? " · \(Int(((job.amount - spentOnJob) / job.amount * 100).rounded()))%" : "")").bold() }
                     .font(.caption).foregroundStyle(.secondary)
             }
+            JobTaxSetAsideRow(job: job, transactions: transactions)
             Divider()
             if !transfers.isEmpty {
                 HStack { Label(transfers.count == 1 ? "Net transferred" : "Net transferred (\(transfers.count))", systemImage: "arrow.right.circle.fill"); Spacer(); Text(transfers.reduce(0) { $0 + $1.amount }.money).bold() }.foregroundStyle(.green)
@@ -386,13 +394,14 @@ struct ActivityView: View {
     @Query private var bookedJobs: [BookedJob]
     let transactions: [Transaction]
     @State private var search = ""; @State private var scope = "all"
+    @State private var editing: Transaction?
     var filtered: [Transaction] { transactions.filter { (scope == "all" || $0.ledgerScope == scope) && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.category.localizedCaseInsensitiveContains(search)) } }
     var body: some View {
         List {
             Picker("Ledger", selection: $scope) { Text("All").tag("all"); Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented).listRowBackground(Color.clear)
-            ForEach(filtered) { TransactionRow(tx: $0).listRowBackground(Color.clear) }
+            ForEach(filtered) { tx in Button { editing = tx } label: { TransactionRow(tx: tx).contentShape(Rectangle()) }.buttonStyle(.plain).listRowBackground(Color.clear) }
                 .onDelete(perform: delete)
-        }.scrollContentBackground(.hidden).background(Color.marginCream).numberPadDone().navigationTitle("Activity").searchable(text: $search, prompt: "Search entries")
+        }.scrollContentBackground(.hidden).background(Color.marginCream).sheet(item: $editing) { TransactionEditView(tx: $0) }.numberPadDone().navigationTitle("Activity").searchable(text: $search, prompt: "Search entries")
     }
     /// Deleting a bank import also skips it, so the next sync doesn't offer it again.
     private func delete(at offsets: IndexSet) {
@@ -543,8 +552,11 @@ struct AddEntryView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
     let categories: [BudgetCategory]
     let transactions: [Transaction]
+    @Query private var rules: [MerchantRule]
     @State private var type = 0
     @State private var jobID: UUID?
+    /// Set once the person picks a category themselves, so a remembered one never overrides their choice.
+    @State private var categoryPicked = false
     @State private var title = ""; @State private var amount = ""; @State private var date = Date(); @State private var category = ""; @State private var essential = true; @State private var scope = "personal"
     @State private var gross = ""; @State private var grossDate = Date(); @State private var net = ""; @State private var netDate = Date()
     private var personalCategoryNames: [String] { categories.sorted { ($0.groupName, $0.name) < ($1.groupName, $1.name) }.map(\.name) }
@@ -564,7 +576,7 @@ struct AddEntryView: View {
             Section("Expense") { TextField("Merchant or description", text: $title); TextField("Amount", text: $amount).keyboardType(.decimalPad); DatePicker("Date", selection: $date, displayedComponents: .date) }
             Section("Ledger") {
                 Picker("Account", selection: $scope) { Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented)
-                Picker("Category", selection: $category) { ForEach(categoryOptions, id: \.self) { Text($0).tag($0) } }
+                Picker("Category", selection: Binding(get: { category }, set: { category = $0; categoryPicked = true })) { ForEach(categoryOptions, id: \.self) { Text($0).tag($0) } }
                 if scope == "personal" { Toggle("This was necessary", isOn: $essential) }
                 if scope == "business", !recentJobs.isEmpty {
                     Picker("For job", selection: $jobID) {
@@ -579,15 +591,22 @@ struct AddEntryView: View {
         }
         Section { Button("Save entry") { saveEntry() }.frame(maxWidth: .infinity).bold().disabled(!canSave) }
     }.numberPadDone().navigationTitle(type == 0 ? "Add expense" : "Log intervention income").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-        .onAppear(perform: resetCategoryIfNeeded).onChange(of: scope) { resetCategoryIfNeeded() }
+        .onAppear(perform: resetCategoryIfNeeded).onChange(of: scope) { resetCategoryIfNeeded(); applyRememberedCategory() }
+        .onChange(of: title) { applyRememberedCategory() }
     } }
     /// Keeps the category valid for the chosen ledger, so a business expense can't be saved as "Groceries".
     private func resetCategoryIfNeeded() { if !categoryOptions.contains(category) { category = categoryOptions.first ?? "" } }
+    /// "Safeway" → the category last used for Safeway in this ledger, unless the person already chose one.
+    private func applyRememberedCategory() {
+        guard type == 0, !categoryPicked, let remembered = MerchantRules.category(for: title, scope: scope, rules: rules.map(\.info), options: categoryOptions) else { return }
+        category = remembered
+    }
     private func saveEntry() {
         guard canSave else { return }
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if type == 0, let value = Double(moneyInput: amount) {
             context.insert(Transaction(title: name, amount: value, date: date, category: category, isEssential: scope == "personal" ? essential : true, ledgerScope: scope, jobID: scope == "business" ? jobID : nil))
+            MerchantRule.learn(title: name, scope: scope, category: category, rules: rules, in: context)
         } else if let grossValue = Double(moneyInput: gross) {
             let jobID = UUID()
             context.insert(Transaction(title: name, amount: grossValue, date: grossDate, category: "Intervention income", isIncome: true, ledgerScope: "business", incomeKind: "gross", jobID: jobID))

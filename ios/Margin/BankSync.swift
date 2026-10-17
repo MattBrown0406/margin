@@ -111,6 +111,7 @@ struct BankAccountsView: View {
     @Query private var existing: [Transaction]
     @StateObject private var model = BankSyncViewModel()
     @Query private var categories: [BudgetCategory]
+    @Query private var rules: [MerchantRule]
     @AppStorage("margin.bankAccountScopes") private var accountScopesJSON = "{}"
     @AppStorage("margin.bankSkippedTransactionIDs") private var skippedJSON = "[]"
     @State private var reviewScopes: [String: String] = [:]
@@ -245,6 +246,8 @@ struct BankAccountsView: View {
     private func reviewCategory(_ tx: ImportedBankTransaction) -> String {
         let scope = reviewScope(tx)
         if let chosen = reviewCategories[tx.id], categoryOptions(for: scope).contains(chosen) { return chosen }
+        // The category last used for this merchant beats Plaid's guess.
+        if let remembered = MerchantRules.category(for: tx.name, scope: scope, rules: rules.map(\.info), options: categoryOptions(for: scope)) { return remembered }
         return suggestedCategory(tx.category, scope: scope)
     }
     /// Recent intervention receipts an imported Net transfer can be attached to.
@@ -287,7 +290,9 @@ struct BankAccountsView: View {
                              jobID: scope == "business" ? (reviewJobs[imported.id] ?? nil) : nil)
         }
         tx.externalID = imported.id; tx.externalAccountID = imported.accountId; tx.isPending = false
-        context.insert(tx); try? context.save()
+        context.insert(tx)
+        if !tx.isIncome { MerchantRule.learn(title: imported.name, scope: tx.ledgerScope, category: tx.category, rules: rules, in: context) }
+        try? context.save()
     }
 
     private var accountScopes: [String: String] {

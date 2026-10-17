@@ -32,11 +32,7 @@ private struct TaxPlanSections: View {
     @Binding var paymentDraft: TaxPaymentDraft?
 
     /// The tax year being paid: last year's until its January installment is due, then this year's.
-    private var year: Int {
-        let calendarYear = Calendar.current.component(.year, from: .now)
-        let lastQ4 = EstimatedTax.dueDates(taxYear: calendarYear - 1).last ?? .distantPast
-        return Calendar.current.startOfDay(for: .now) <= lastQ4 ? calendarYear - 1 : calendarYear
-    }
+    private var year: Int { EstimatedTax.plannerYear(now: .now) }
     private var reserve: Double { TaxReserve.balance(adjustment: settings.taxReserveAdjustment, allocations: allocations, payments: payments) }
     /// Editing the reserve stores the difference from what the records say.
     private var reserveBinding: Binding<Double> {

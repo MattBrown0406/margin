@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import AuthenticationServices
 import CryptoKit
 
@@ -90,6 +91,8 @@ private struct SignedOutResponse: Decodable { let signedOut: Bool }
 }
 
 struct AccountView: View {
+    @Environment(\.modelContext) private var context
+    @Query private var settingsList: [FinanceSettings]
     @StateObject private var account = AccountModel()
     @AppStorage(MarginStore.iCloudSyncKey) private var iCloudSync = true
     @State private var confirmDelete = false
@@ -118,6 +121,7 @@ struct AccountView: View {
             } header: { Text("Account") } footer: {
                 Text("Signing in unlocks bank connections and Ask Margin. Your budget itself stays on your devices and in your iCloud.")
             }
+            if let settings = FinanceSettings.pick(settingsList) { RemindersSection(settings: settings) }
             Section {
                 Toggle("Sync with iCloud", isOn: $iCloudSync)
                 LabeledContent("Status", value: iCloudStatus)

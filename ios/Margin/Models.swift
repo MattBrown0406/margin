@@ -221,6 +221,10 @@ enum StarterBudget {
     var lastRolloverMonthKey: String = ""
     /// Merchants the person said aren't recurring.
     var ignoredRecurringKeys: [String] = []
+    /// Reminders (local notifications), each off until the person turns it on.
+    var remindBills: Bool = false
+    var remindNet: Bool = false
+    var remindTaxes: Bool = false
 
     init() { self.id = UUID(); self.createdAt = .now }
 
@@ -256,6 +260,7 @@ enum StarterBudget {
         if surplusTarget.isEmpty { surplusTarget = other.surplusTarget }
         lastRolloverMonthKey = max(lastRolloverMonthKey, other.lastRolloverMonthKey)
         ignoredRecurringKeys = Array(Set(ignoredRecurringKeys + other.ignoredRecurringKeys)).sorted()
+        remindBills = remindBills || other.remindBills; remindNet = remindNet || other.remindNet; remindTaxes = remindTaxes || other.remindTaxes
     }
 
     /// The record in use, created on first need.
@@ -350,10 +355,11 @@ enum StarterBudget {
     }
 }
 
-/// The tax reserve, from records: Net assigned to taxes, minus what tax payments took out of it, plus any correction.
+/// The tax reserve, from records: Net assigned to taxes and tax set aside from jobs' Gross, minus what tax payments took
+/// out of it, plus any correction.
 enum TaxReserve {
     static func balance(adjustment: Double, allocations: [NetAllocation], payments: [EstimatedTaxPayment]) -> Double {
-        adjustment + allocations.filter { $0.kind == AllocationTarget.Kind.tax.rawValue }.reduce(0) { $0 + $1.amount } - payments.reduce(0) { $0 + $1.reserveUsed }
+        adjustment + allocations.filter { AllocationKinds.fundsTaxReserve($0.kind) }.reduce(0) { $0 + $1.amount } - payments.reduce(0) { $0 + $1.reserveUsed }
     }
 }
 
@@ -380,4 +386,31 @@ func addToFundOrGoal(_ name: String, amount: Double, categories: [BudgetCategory
     if let fund { fund.fundBalance = max(0, fund.fundBalance + amount) }
     if let goal { goal.saved = max(0, (fund?.fundBalance ?? goal.saved + amount)) }
     return fund != nil || goal != nil
+}
+
+/// "Safeway goes in Groceries": the category last chosen for a merchant in one ledger, applied to the next bank import
+/// or typed expense from it. If iCloud delivers duplicates, the newest wins.
+@Model final class MerchantRule {
+    var id: UUID = UUID()
+    var key: String = ""
+    var scope: String = "personal"
+    var category: String = ""
+    var updatedAt: Date = Date.distantPast
+
+    init(key: String, scope: String, category: String) { self.id = UUID(); self.key = key; self.scope = scope; self.category = category; self.updatedAt = .now }
+    var info: MerchantRuleInfo { MerchantRuleInfo(key: key, scope: scope, category: category, updatedAt: updatedAt) }
+
+    /// Remembers `category` for this merchant and ledger (nothing for a title with no usable merchant name).
+    @MainActor static func learn(title: String, scope: String, category: String, rules: [MerchantRule], in context: ModelContext) {
+        let key = RecurringDetector.merchantKey(title)
+        guard !key.isEmpty, !category.isEmpty else { return }
+        let matching = rules.filter { $0.key == key && $0.scope == scope }
+        if let newest = matching.max(by: { $0.updatedAt < $1.updatedAt }) {
+            if newest.category != category { newest.category = category }
+            newest.updatedAt = .now
+            matching.filter { $0.id != newest.id }.forEach(context.delete)
+        } else {
+            context.insert(MerchantRule(key: key, scope: scope, category: category))
+        }
+    }
 }

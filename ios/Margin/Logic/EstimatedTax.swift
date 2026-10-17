@@ -152,6 +152,13 @@ enum EstimatedTax {
         }
     }
 
+    /// The tax year being paid on `now`: last year's until its January installment is due, then this year's.
+    static func plannerYear(now: Date, calendar: Calendar = .current) -> Int {
+        let year = calendar.component(.year, from: now)
+        let lastQ4 = dueDates(taxYear: year - 1, calendar: calendar).last ?? .distantPast
+        return calendar.startOfDay(for: now) <= lastQ4 ? year - 1 : year
+    }
+
     static func isDeadlineHoliday(_ date: Date, calendar: Calendar) -> Bool {
         let parts = calendar.dateComponents([.year, .month, .day, .weekday], from: date)
         guard let year = parts.year, let month = parts.month, let day = parts.day else { return false }

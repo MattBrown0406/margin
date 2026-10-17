@@ -11,7 +11,8 @@ struct MarginApp: App {
 
 enum MarginStore {
     static let schema = Schema([Transaction.self, BudgetCategory.self, SavingsGoal.self, PauseItem.self, Paycheck.self, BookedJob.self,
-                                FinanceSettings.self, Debt.self, Asset.self, NetWorthSnapshot.self, NetAllocation.self, EstimatedTaxPayment.self])
+                                FinanceSettings.self, Debt.self, Asset.self, NetWorthSnapshot.self, NetAllocation.self, EstimatedTaxPayment.self,
+                                MerchantRule.self])
     /// User preference, read at launch. Both modes use the same on-device store, so switching keeps data.
     static let iCloudSyncKey = "margin.iCloudSync"
     private(set) static var isUsingCloudKit = false
