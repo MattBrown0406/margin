@@ -460,6 +460,7 @@ struct ActivityView: View {
                       return abs(t.amount - gone.amount) < 0.005 && abs(t.date.timeIntervalSince(gone.date)) <= 3 * 86_400
                   }), let twinID = twin.jobID?.uuidString else { continue }
             setAside.target = twinID; claimed.insert(twinID)
+            setAside.monthStart = Calendar.current.startOfMonth(for: twin.date); setAside.monthKey = Calendar.current.monthKey(for: twin.date)
             orphaned.removeAll { $0.id == setAside.id }
         }
         let kept = orphaned.filter { $0.kind == AllocationKinds.grossTax }.reduce(0) { $0 + $1.amount }

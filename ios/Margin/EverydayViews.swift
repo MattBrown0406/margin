@@ -34,11 +34,11 @@ struct TransactionEditView: View {
     /// moving the transfer out of this month.
     private var netOverAssigned: Double? {
         guard tx.incomeKind == "net", tx.ledgerScope == "personal", let value else { return nil }
+        // The Net transfers as they'd be after saving, run through the same rules Assign Net uses.
+        let nets = NetAssignment.personalNets(transactions.filter { $0.id != tx.id }) + [(date: date, amount: value)]
         let calendar = Calendar.current
-        let wasThisMonth = calendar.isDate(tx.date, equalTo: .now, toGranularity: .month), isThisMonth = calendar.isDate(date, equalTo: .now, toGranularity: .month)
-        guard wasThisMonth || isThisMonth else { return nil }
-        let available = NetAssignment.monthNet(transactions) - (wasThisMonth ? tx.amount : 0) + (isThisMonth ? value : 0)
-            + NetAssignment.carriedIn(transactions: transactions, allocations: allocations)
+        let available = nets.filter { calendar.isDate($0.date, equalTo: .now, toGranularity: .month) }.reduce(0) { $0 + $1.amount }
+            + NetAssignment.carriedIn(nets: nets, allocations: allocations)
         let gap = NetAssignment.assignedThisMonth(allocations).reduce(0) { $0 + $1.amount } - available
         return gap > 0.5 ? gap : nil
     }
@@ -108,9 +108,11 @@ struct TransactionEditView: View {
             // A corrected category is the one to use for this merchant next time — under the bank's original
             // description too, since that's what the next import will carry.
             if changedCategory {
-                MerchantRule.learn(title: tx.title, scope: scope, category: category, rules: rules, in: context)
-                for other in Set([originalTitle, tx.externalName ?? ""]) where !other.isEmpty && MerchantRules.learnableKey(other) != MerchantRules.learnableKey(tx.title) {
-                    MerchantRule.learn(title: other, scope: scope, category: category, rules: rules, in: context)
+                // One rule per distinct merchant key (the rules list doesn't see rows inserted during this save).
+                var seen = Set<String>()
+                for name in [tx.title, originalTitle, tx.externalName ?? ""] {
+                    guard let key = MerchantRules.learnableKey(name), seen.insert(key).inserted else { continue }
+                    MerchantRule.learn(title: name, scope: scope, category: category, rules: rules, in: context)
                 }
             }
         }
@@ -172,18 +174,16 @@ struct TaxSetAsideCard: View {
     var body: some View {
         let settings = FinanceSettings.pick(settingsList)
         let pending = JobTaxSetAside.pending(transactions: transactions, allocations: allocations, since: settings?.taxSetAsideSince)
-        // The newest job whose tax year has something to estimate (a year with no profit yet has a 0% rate).
-        let offer: (job: Transaction, rate: Double)? = {
-            var rates: [Int: Double] = [:]
-            for job in pending {
-                let year = JobTaxSetAside.year(of: job)
-                let rate = rates[year] ?? JobTaxSetAside.rate(transactions: transactions, settings: settings, year: year)
-                rates[year] = rate
-                if rate > 0 { return (job, rate) }
-            }
-            return nil
-        }()
-        if let offer { card(offer.job, rate: offer.rate, more: pending.count - 1) }
+        // The newest job whose tax year has something to estimate (a year with no profit yet has a 0% rate); "more"
+        // counts only the others that would show an offer too.
+        var rates: [Int: Double] = [:]
+        let offerable = pending.compactMap { job -> (job: Transaction, rate: Double)? in
+            let year = JobTaxSetAside.year(of: job)
+            let rate = rates[year] ?? JobTaxSetAside.rate(transactions: transactions, settings: settings, year: year)
+            rates[year] = rate
+            return rate > 0 ? (job, rate) : nil
+        }
+        if let offer = offerable.first { card(offer.job, rate: offer.rate, more: offerable.count - 1) }
     }
 
     @ViewBuilder private func card(_ job: Transaction, rate: Double, more: Int) -> some View {

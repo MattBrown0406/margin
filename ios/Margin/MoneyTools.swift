@@ -88,10 +88,17 @@ enum NetAssignment {
     /// first bills, so it can be assigned now. Bounded to those last five days, so an unused feature doesn't pile up.
     static let lateNetDays = 5
     static func carriedIn(transactions: [Transaction], allocations: [NetAllocation], now: Date = .now) -> Double {
+        carriedIn(nets: personalNets(transactions), allocations: allocations, now: now)
+    }
+    /// Personal Net transfers as (date, amount), so a "what if" edit can be worked out with the same rules.
+    static func personalNets(_ transactions: [Transaction]) -> [(date: Date, amount: Double)] {
+        transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" }.map { ($0.date, $0.amount) }
+    }
+    static func carriedIn(nets all: [(date: Date, amount: Double)], allocations: [NetAllocation], now: Date = .now) -> Double {
         let calendar = Calendar.current, thisMonth = calendar.startOfMonth(for: now)
         guard let previous = calendar.date(byAdding: .month, value: -1, to: thisMonth),
               let lateStart = calendar.date(byAdding: .day, value: -lateNetDays, to: thisMonth) else { return 0 }
-        let nets = transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" && $0.date >= previous && $0.date < thisMonth }
+        let nets = all.filter { $0.date >= previous && $0.date < thisMonth }
         let late = nets.filter { $0.date >= lateStart }.reduce(0) { $0 + $1.amount }
         let previousKey = calendar.monthKey(for: previous)
         let assigned = allocations.filter { isFromNet($0.kind) && $0.monthKey == previousKey }.reduce(0) { $0 + $1.amount }
