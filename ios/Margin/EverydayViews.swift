@@ -29,6 +29,14 @@ struct TransactionEditView: View {
         return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.jobID != nil && ($0.date >= cutoff || $0.jobID == tx.jobID) }
     }
     private var value: Double? { Double(moneyInput: amount) }
+    /// For a Net transfer edited lower: how far this month's Net would fall below what's already assigned from it.
+    private var netOverAssigned: Double? {
+        guard tx.incomeKind == "net", tx.ledgerScope == "personal", let value, Calendar.current.isDate(date, equalTo: .now, toGranularity: .month) else { return nil }
+        let otherNet = NetAssignment.monthNet(transactions) - (Calendar.current.isDate(tx.date, equalTo: .now, toGranularity: .month) ? tx.amount : 0)
+        let assigned = NetAssignment.assignedThisMonth(allocations).reduce(0) { $0 + $1.amount }
+        let gap = assigned - (otherNet + value)
+        return gap > 0.5 ? gap : nil
+    }
     private var canSave: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value != nil && (tx.isIncome || categoryOptions.contains(category)) }
 
     var body: some View { NavigationStack { Form {
@@ -41,6 +49,10 @@ struct TransactionEditView: View {
         if tx.isIncome {
             Section {
                 LabeledContent("Type", value: tx.incomeKind == "gross" ? "Gross received by the business" : tx.incomeKind == "net" ? "Net transferred to personal" : "Income")
+                if let over = netOverAssigned {
+                    Label("This month’s Net would be \(over.money) less than what’s already assigned. Undo an assignment in Assign Net to match.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(Color.marginCoral)
+                }
             } footer: { Text("To change the type, delete this entry and add it again.") }
         } else {
             Section("Ledger") {
@@ -72,14 +84,14 @@ struct TransactionEditView: View {
 
     private func save() {
         guard let value else { return }
-        let originalTitle = tx.title, oldAmount = tx.amount, oldDate = tx.date
+        let originalTitle = tx.title, oldDate = tx.date
         tx.title = title.trimmingCharacters(in: .whitespacesAndNewlines); tx.date = date
         if tx.isIncome {
             tx.amount = value
-            // A job's tax set-aside follows a corrected amount (same rate) and date (its month).
-            if tx.incomeKind == "gross", let id = tx.jobID?.uuidString, abs(oldAmount - value) > 0.005 || oldDate != date {
-                for decision in allocations where decision.target == id && (decision.kind == AllocationKinds.grossTax || decision.kind == AllocationKinds.grossTaxSkipped) {
-                    if decision.kind == AllocationKinds.grossTax, oldAmount > 0 { decision.amount = (decision.amount * value / oldAmount).rounded() }
+            // A job's tax set-aside keeps its amount (that money really moved; Undo on the job card changes it) and
+            // follows the job to its corrected month.
+            if tx.incomeKind == "gross", let id = tx.jobID?.uuidString, oldDate != date {
+                for decision in allocations where decision.target == id && JobTaxSetAside.isDecision(decision) {
                     decision.monthStart = Calendar.current.startOfMonth(for: date); decision.monthKey = Calendar.current.monthKey(for: date)
                 }
             }
@@ -92,8 +104,8 @@ struct TransactionEditView: View {
             // description too, since that's what the next import will carry.
             if changedCategory {
                 MerchantRule.learn(title: tx.title, scope: scope, category: category, rules: rules, in: context)
-                if MerchantRules.learnableKey(originalTitle) != MerchantRules.learnableKey(tx.title) {
-                    MerchantRule.learn(title: originalTitle, scope: scope, category: category, rules: rules, in: context)
+                for other in Set([originalTitle, tx.externalName ?? ""]) where !other.isEmpty && MerchantRules.learnableKey(other) != MerchantRules.learnableKey(tx.title) {
+                    MerchantRule.learn(title: other, scope: scope, category: category, rules: rules, in: context)
                 }
             }
         }

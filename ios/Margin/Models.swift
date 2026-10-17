@@ -15,6 +15,9 @@ import SwiftData
     var splitAmount: Double?
     var externalID: String?
     var externalAccountID: String?
+    /// The bank's own description of an imported entry, kept so a category correction is learned under the name the
+    /// next import will carry, however the entry was renamed.
+    var externalName: String?
     var isPending: Bool = false
     /// `business` for company activity and `personal` for household activity.
     var ledgerScope: String = "personal"

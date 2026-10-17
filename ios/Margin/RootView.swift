@@ -444,11 +444,14 @@ struct ActivityView: View {
                 if !job.ignoredPaymentIDs.contains(id) { job.ignoredPaymentIDs.append(id) }
             }
         }
-        // A deleted job's tax set-aside goes with it, so the reserve never counts money for a job that no longer exists
-        // (a job entered again is offered a set-aside again).
+        // A deleted job's set-aside decision goes with it (a job entered again is offered a set-aside again).
         let removedJobs = Set(removed.filter { $0.isIncome && $0.incomeKind == "gross" }.compactMap { $0.jobID?.uuidString })
         let stillThere = Set(transactions.filter { $0.isIncome && $0.incomeKind == "gross" && !removedIDs.contains($0.id) }.compactMap { $0.jobID?.uuidString })
-        allocations.filter { JobTaxSetAside.isDecision($0) && removedJobs.contains($0.target) && !stillThere.contains($0.target) }.forEach(context.delete)
+        // Its money really moved to tax savings, though: what was set aside stays in the reserve (as a correction).
+        let orphaned = allocations.filter { JobTaxSetAside.isDecision($0) && removedJobs.contains($0.target) && !stillThere.contains($0.target) }
+        let kept = orphaned.filter { $0.kind == AllocationKinds.grossTax }.reduce(0) { $0 + $1.amount }
+        if kept > 0 { FinanceSettings.current(in: context).taxReserveAdjustment += kept }
+        orphaned.forEach(context.delete)
         removed.forEach(context.delete); try? context.save()
     }
 }

@@ -289,7 +289,7 @@ struct BankAccountsView: View {
             tx = Transaction(title: imported.name, amount: creditKind == "refund" ? -abs(imported.amount) : imported.amount, date: date, category: reviewCategory(imported), ledgerScope: scope,
                              jobID: scope == "business" ? (reviewJobs[imported.id] ?? nil) : nil)
         }
-        tx.externalID = imported.id; tx.externalAccountID = imported.accountId; tx.isPending = false
+        tx.externalID = imported.id; tx.externalAccountID = imported.accountId; tx.externalName = imported.name; tx.isPending = false
         context.insert(tx)
         if !tx.isIncome { MerchantRule.learn(title: imported.name, scope: tx.ledgerScope, category: tx.category, rules: rules, in: context) }
         try? context.save()
