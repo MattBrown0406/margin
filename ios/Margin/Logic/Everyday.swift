@@ -9,10 +9,20 @@ struct MerchantRuleInfo: Equatable {
 }
 
 enum MerchantRules {
+    /// Bank descriptions that name a payment method, not a payee ("CHECK 1001", "Zelle", "ATM WITHDRAWAL"): one
+    /// category can't fit everything paid that way, so nothing is learned or suggested for them.
+    static let genericWords: Set<String> = ["check", "chk", "venmo", "zelle", "cash", "atm", "withdrawal", "deposit", "transfer", "xfer", "wire", "payment", "online", "mobile", "ach", "debit", "credit"]
+
+    /// The merchant key to learn under, or nil when the title has no usable merchant name.
+    static func learnableKey(_ title: String) -> String? {
+        let key = RecurringDetector.merchantKey(title)
+        guard !key.isEmpty, !key.split(separator: " ").allSatisfy({ genericWords.contains(String($0)) }) else { return nil }
+        return key
+    }
+
     /// The category last chosen for this merchant in this ledger, if it's still one of `options`.
     static func category(for title: String, scope: String, rules: [MerchantRuleInfo], options: [String]) -> String? {
-        let key = RecurringDetector.merchantKey(title)
-        guard !key.isEmpty else { return nil }
+        guard let key = learnableKey(title) else { return nil }
         return rules.filter { $0.key == key && $0.scope == scope && options.contains($0.category) }.max { $0.updatedAt < $1.updatedAt }?.category
     }
 }
@@ -45,7 +55,13 @@ enum ReminderSchedule {
     ///   month's unpaid bills and the coming months' within the horizon. Reminders already in the past are skipped.
     /// - Net: if Net is waiting to be assigned, tomorrow at 9 AM.
     /// - Taxes: a week before the next estimated-tax due date, at 9 AM, with what's due.
-    static func plan(bills: [(name: String, dueDay: Int, amount: Double, paidThisMonth: Bool)], leftToAssign: Double,
+    /// - Parameters:
+    ///   - paidRecently: bills with a payment in the last week; a due date within the next 10 days counts as covered
+    ///     (rent due the 1st, paid on the 29th).
+    ///   - netArrived: when the newest unassigned Net came in; the reminder is the morning after, or the next 9 AM if
+    ///     that's already gone.
+    static func plan(bills: [(name: String, dueDay: Int, amount: Double, paidThisMonth: Bool)], paidRecently: Set<String> = [],
+                     leftToAssign: Double, netArrived: Date? = nil,
                      nextTaxDue: (date: Date, amount: Double, quarter: Int)?, includeBills: Bool, includeNet: Bool, includeTaxes: Bool,
                      now: Date, calendar: Calendar = .current) -> [ReminderPlan] {
         var plans: [ReminderPlan] = []
@@ -59,6 +75,7 @@ enum ReminderSchedule {
                           let remindDay = calendar.date(byAdding: .day, value: -2, to: due) else { continue }
                     let fire = at9(remindDay, calendar: calendar)
                     guard fire > now, fire <= until else { continue }
+                    if paidRecently.contains(bill.name), let soon = calendar.date(byAdding: .day, value: 10, to: now), due <= soon { continue }
                     plans.append(ReminderPlan(id: "bill|\(bill.name)|\(calendar.monthKey(for: due))", date: fire, title: "\(bill.name) is due \(due.formatted(.dateTime.weekday(.wide)))",
                                               body: "\(bill.amount.money) is planned for it, due the \(calendar.component(.day, from: due).ordinalString)."))
                 }
@@ -67,7 +84,10 @@ enum ReminderSchedule {
             }
         }
         if includeNet, leftToAssign >= 1, let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) {
-            plans.append(ReminderPlan(id: "net", date: at9(tomorrow, calendar: calendar), title: "\(leftToAssign.money) of Net to assign",
+            // The morning after the Net arrived; if that's gone, the next 9 AM (today's, if it's still ahead).
+            var fire = netArrived.flatMap { calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: $0)) }.map { at9($0, calendar: calendar) } ?? at9(tomorrow, calendar: calendar)
+            if fire <= now { fire = at9(now, calendar: calendar) > now ? at9(now, calendar: calendar) : at9(tomorrow, calendar: calendar) }
+            plans.append(ReminderPlan(id: "net", date: fire, title: "\(leftToAssign.money) of Net to assign",
                                       body: "Give it a job before it gets spent: bills first, then taxes and funds."))
         }
         if includeTaxes, let due = nextTaxDue, due.amount >= 1, let weekBefore = calendar.date(byAdding: .day, value: -7, to: due.date) {

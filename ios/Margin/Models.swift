@@ -225,6 +225,9 @@ enum StarterBudget {
     var remindBills: Bool = false
     var remindNet: Bool = false
     var remindTaxes: Bool = false
+    /// Job payments dated before this aren't offered a tax set-aside on Today (they predate the feature, and their tax
+    /// may already be in the reserve); the job card in Plan › Income still offers one.
+    var taxSetAsideSince: Date?
 
     init() { self.id = UUID(); self.createdAt = .now }
 
@@ -261,6 +264,7 @@ enum StarterBudget {
         lastRolloverMonthKey = max(lastRolloverMonthKey, other.lastRolloverMonthKey)
         ignoredRecurringKeys = Array(Set(ignoredRecurringKeys + other.ignoredRecurringKeys)).sorted()
         remindBills = remindBills || other.remindBills; remindNet = remindNet || other.remindNet; remindTaxes = remindTaxes || other.remindTaxes
+        if let theirs = other.taxSetAsideSince { taxSetAsideSince = min(taxSetAsideSince ?? theirs, theirs) }
     }
 
     /// The record in use, created on first need.
@@ -400,10 +404,10 @@ func addToFundOrGoal(_ name: String, amount: Double, categories: [BudgetCategory
     init(key: String, scope: String, category: String) { self.id = UUID(); self.key = key; self.scope = scope; self.category = category; self.updatedAt = .now }
     var info: MerchantRuleInfo { MerchantRuleInfo(key: key, scope: scope, category: category, updatedAt: updatedAt) }
 
-    /// Remembers `category` for this merchant and ledger (nothing for a title with no usable merchant name).
+    /// Remembers `category` for this merchant and ledger (nothing for a title with no usable merchant name, or one
+    /// that only names a payment method like "CHECK 1001").
     @MainActor static func learn(title: String, scope: String, category: String, rules: [MerchantRule], in context: ModelContext) {
-        let key = RecurringDetector.merchantKey(title)
-        guard !key.isEmpty, !category.isEmpty else { return }
+        guard let key = MerchantRules.learnableKey(title), !category.isEmpty else { return }
         let matching = rules.filter { $0.key == key && $0.scope == scope }
         if let newest = matching.max(by: { $0.updatedAt < $1.updatedAt }) {
             if newest.category != category { newest.category = category }

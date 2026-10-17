@@ -9,6 +9,7 @@ struct RootView: View {
     @Query private var goals: [SavingsGoal]
     @Query private var bookedJobs: [BookedJob]
     @Query private var financeSettings: [FinanceSettings]
+    @Query private var allocations: [NetAllocation]
     @AppStorage("margin.seeded") private var seeded = false
     @AppStorage("margin.ledgerV2Migrated") private var ledgerV2Migrated = false
     @State private var selectedTab = 0
@@ -36,6 +37,7 @@ struct RootView: View {
         .onChange(of: categories.count) { removeSyncDuplicates() }
         .onChange(of: goals.count) { removeSyncDuplicates() }
         .onChange(of: financeSettings.count) { removeSyncDuplicates() }
+        .onChange(of: allocations.count) { removeSyncDuplicates() }
         // Keep the widget current whenever today's numbers change, and when returning to the app.
         .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
         .onChange(of: scenePhase) { _, phase in
@@ -46,7 +48,8 @@ struct RootView: View {
     }
 
     private func seedAndMigrateIfNeeded() {
-        _ = FinanceSettings.current(in: context)   // the money tools' settings (the rollover card needs them from day one)
+        let finance = FinanceSettings.current(in: context)   // the money tools' settings (the rollover card needs them from day one)
+        if finance.taxSetAsideSince == nil { finance.taxSetAsideSince = .now; try? context.save() }
         if !ledgerV2Migrated {
             // Existing income is preserved as money received by the business. We do not
             // invent a personal transfer; the user records Net only when it really moves.
@@ -82,6 +85,12 @@ struct RootView: View {
             survivorsFirst(group, createdAt: \.createdAt, id: \.id).dropFirst().forEach { context.delete($0); changed = true }
         }
         // Each device may create money-tool settings before iCloud delivers the other's: fold them into the oldest.
+        // Two devices can each decide a job's tax set-aside before syncing: keep one decision per job, a set-aside
+        // over a "not now", the earliest of equals.
+        for group in Dictionary(grouping: allocations.filter(JobTaxSetAside.isDecision), by: \.target).values where group.count > 1 {
+            let keep = group.sorted { ($0.kind == AllocationKinds.grossTax ? 0 : 1, $0.date, $0.id.uuidString) < ($1.kind == AllocationKinds.grossTax ? 0 : 1, $1.date, $1.id.uuidString) }[0]
+            group.filter { $0.id != keep.id }.forEach { context.delete($0); changed = true }
+        }
         if financeSettings.count > 1, let keep = FinanceSettings.pick(financeSettings) {
             for other in financeSettings where other.id != keep.id { keep.absorb(other); context.delete(other); changed = true }
         }
@@ -256,6 +265,8 @@ struct PlanView: View {
 
 struct InterventionIncomeView: View {
     @Environment(\.modelContext) private var context
+    @Query private var allocations: [NetAllocation]
+    @Query private var settingsList: [FinanceSettings]
     let transactions: [Transaction]
     @State private var selectedGross: Transaction?
     private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
@@ -273,21 +284,25 @@ struct InterventionIncomeView: View {
     private var net: Double { month.filter { $0.isIncome && $0.incomeKind == "net" }.reduce(0) { $0 + $1.amount } }
 
     var body: some View {
+        // Set-aside rates per tax year and decisions per job, worked out once for every card.
+        let settings = FinanceSettings.pick(settingsList), shown = grossEntries + earlierEntries
+        let rates = Dictionary(uniqueKeysWithValues: Set(shown.map(JobTaxSetAside.year(of:))).map { ($0, JobTaxSetAside.rate(transactions: transactions, settings: settings, year: $0)) })
+        let decisions = Dictionary(grouping: allocations.filter(JobTaxSetAside.isDecision), by: \.target)
         VStack(alignment: .leading, spacing: 14) {
             Text("Income is recorded when an intervention pays—not on a payroll schedule.").font(.subheadline).foregroundStyle(.secondary)
             HStack(spacing: 12) {
                 IncomeTotalCard(title: "GROSS", amount: gross, note: "Received by business", dark: true)
                 IncomeTotalCard(title: "NET", amount: net, note: "Transferred personal", dark: false)
             }
-            ForEach(grossEntries) { jobCard($0) }
+            ForEach(grossEntries) { jobCard($0, rates: rates, decisions: decisions) }
             if grossEntries.isEmpty { ContentUnavailableView("No intervention income", systemImage: "briefcase", description: Text("Use Add to record money when a job pays.")) }
             if !earlierEntries.isEmpty {
-                DisclosureGroup("Earlier jobs (\(earlierEntries.count))") { VStack(spacing: 12) { ForEach(earlierEntries) { jobCard($0) } }.padding(.top, 8) }.tint(.marginInk)
+                DisclosureGroup("Earlier jobs (\(earlierEntries.count))") { VStack(spacing: 12) { ForEach(earlierEntries) { jobCard($0, rates: rates, decisions: decisions) } }.padding(.top, 8) }.tint(.marginInk)
             }
         }.sheet(item: $selectedGross) { RecordNetTransferView(grossEntry: $0, transactions: transactions) }
     }
 
-    private func jobCard(_ job: Transaction) -> some View {
+    private func jobCard(_ job: Transaction, rates: [Int: Double], decisions: [String: [NetAllocation]]) -> some View {
         let transfers = job.netTransfers(in: transactions)
         return VStack(alignment: .leading, spacing: 10) {
             HStack { VStack(alignment: .leading) { Text(job.title).font(.headline); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(job.amount.money).bold() }
@@ -296,7 +311,7 @@ struct InterventionIncomeView: View {
                 HStack { Text("Job expenses \(spentOnJob.money)"); Spacer(); Text("Profit \((job.amount - spentOnJob).money)\(job.amount > 0 ? " · \(Int(((job.amount - spentOnJob) / job.amount * 100).rounded()))%" : "")").bold() }
                     .font(.caption).foregroundStyle(.secondary)
             }
-            JobTaxSetAsideRow(job: job, transactions: transactions)
+            JobTaxSetAsideRow(job: job, decisions: job.jobID.flatMap { decisions[$0.uuidString] } ?? [], rate: rates[JobTaxSetAside.year(of: job)] ?? 0)
             Divider()
             if !transfers.isEmpty {
                 HStack { Label(transfers.count == 1 ? "Net transferred" : "Net transferred (\(transfers.count))", systemImage: "arrow.right.circle.fill"); Spacer(); Text(transfers.reduce(0) { $0 + $1.amount }.money).bold() }.foregroundStyle(.green)
@@ -392,6 +407,7 @@ struct ActivityView: View {
     @Environment(\.modelContext) private var context
     @AppStorage("margin.bankSkippedTransactionIDs") private var skippedJSON = "[]"
     @Query private var bookedJobs: [BookedJob]
+    @Query private var allocations: [NetAllocation]
     let transactions: [Transaction]
     @State private var search = ""; @State private var scope = "all"
     @State private var editing: Transaction?
@@ -428,6 +444,11 @@ struct ActivityView: View {
                 if !job.ignoredPaymentIDs.contains(id) { job.ignoredPaymentIDs.append(id) }
             }
         }
+        // A deleted job's tax set-aside goes with it, so the reserve never counts money for a job that no longer exists
+        // (a job entered again is offered a set-aside again).
+        let removedJobs = Set(removed.filter { $0.isIncome && $0.incomeKind == "gross" }.compactMap { $0.jobID?.uuidString })
+        let stillThere = Set(transactions.filter { $0.isIncome && $0.incomeKind == "gross" && !removedIDs.contains($0.id) }.compactMap { $0.jobID?.uuidString })
+        allocations.filter { JobTaxSetAside.isDecision($0) && removedJobs.contains($0.target) && !stillThere.contains($0.target) }.forEach(context.delete)
         removed.forEach(context.delete); try? context.save()
     }
 }
@@ -595,7 +616,8 @@ struct AddEntryView: View {
         .onChange(of: title) { applyRememberedCategory() }
     } }
     /// Keeps the category valid for the chosen ledger, so a business expense can't be saved as "Groceries".
-    private func resetCategoryIfNeeded() { if !categoryOptions.contains(category) { category = categoryOptions.first ?? "" } }
+    /// A category the app had to replace (switching ledgers) isn't the person's choice any more.
+    private func resetCategoryIfNeeded() { if !categoryOptions.contains(category) { category = categoryOptions.first ?? ""; categoryPicked = false } }
     /// "Safeway" → the category last used for Safeway in this ledger, unless the person already chose one.
     private func applyRememberedCategory() {
         guard type == 0, !categoryPicked, let remembered = MerchantRules.category(for: title, scope: scope, rules: rules.map(\.info), options: categoryOptions) else { return }

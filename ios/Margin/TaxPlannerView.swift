@@ -97,7 +97,7 @@ private struct TaxPlanSections: View {
                       systemImage: gap > 1 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill").font(.subheadline).foregroundStyle(gap > 1 ? Color.marginCoral : .green)
                 if gap > 1 { Button("Set \(line.name) to \(plan.monthlyToSave.rounded(.up).money)") { line.monthlyLimit = plan.monthlyToSave.rounded(.up); try? context.save() } }
             }
-        } header: { Text("Tax reserve") } footer: { Text("Net you assign to taxes adds to the reserve; payments come out of it.") }
+        } header: { Text("Tax reserve") } footer: { Text("Net you assign to taxes and tax set aside from job payments add to the reserve; payments come out of it.") }
 
         Section {
             Picker("Filing status", selection: $settings.filingStatus) { ForEach(FilingStatus.allCases) { Text($0.title).tag($0.rawValue) } }

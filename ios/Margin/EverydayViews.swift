@@ -11,6 +11,7 @@ struct TransactionEditView: View {
     let tx: Transaction
     @Query private var categories: [BudgetCategory]
     @Query private var rules: [MerchantRule]
+    @Query private var allocations: [NetAllocation]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @State private var title = ""; @State private var amount = ""; @State private var isRefund = false; @State private var date = Date()
     @State private var scope = "personal"; @State private var category = ""; @State private var essential = true; @State private var jobID: UUID?
@@ -71,15 +72,30 @@ struct TransactionEditView: View {
 
     private func save() {
         guard let value else { return }
+        let originalTitle = tx.title, oldAmount = tx.amount, oldDate = tx.date
         tx.title = title.trimmingCharacters(in: .whitespacesAndNewlines); tx.date = date
-        if tx.isIncome { tx.amount = value }
-        else {
+        if tx.isIncome {
+            tx.amount = value
+            // A job's tax set-aside follows a corrected amount (same rate) and date (its month).
+            if tx.incomeKind == "gross", let id = tx.jobID?.uuidString, abs(oldAmount - value) > 0.005 || oldDate != date {
+                for decision in allocations where decision.target == id && (decision.kind == AllocationKinds.grossTax || decision.kind == AllocationKinds.grossTaxSkipped) {
+                    if decision.kind == AllocationKinds.grossTax, oldAmount > 0 { decision.amount = (decision.amount * value / oldAmount).rounded() }
+                    decision.monthStart = Calendar.current.startOfMonth(for: date); decision.monthKey = Calendar.current.monthKey(for: date)
+                }
+            }
+        } else {
             let changedCategory = category != tx.category || scope != tx.ledgerScope
             tx.amount = isRefund ? -value : value
             tx.ledgerScope = scope; tx.category = category; tx.isEssential = scope == "personal" ? essential : true
             tx.jobID = scope == "business" ? jobID : nil
-            // A corrected category is the one to use for this merchant next time.
-            if changedCategory { MerchantRule.learn(title: tx.title, scope: scope, category: category, rules: rules, in: context) }
+            // A corrected category is the one to use for this merchant next time — under the bank's original
+            // description too, since that's what the next import will carry.
+            if changedCategory {
+                MerchantRule.learn(title: tx.title, scope: scope, category: category, rules: rules, in: context)
+                if MerchantRules.learnableKey(originalTitle) != MerchantRules.learnableKey(tx.title) {
+                    MerchantRule.learn(title: originalTitle, scope: scope, category: category, rules: rules, in: context)
+                }
+            }
         }
         try? context.save(); dismiss()
     }
@@ -91,21 +107,33 @@ enum JobTaxSetAside {
     /// Jobs paid recently enough to still offer a set-aside.
     static let offerDays = 45
 
-    /// This year's share of Gross to set aside (0 when there's nothing to estimate yet).
-    static func rate(transactions: [Transaction], settings: FinanceSettings?, now: Date = .now) -> Double {
-        let year = EstimatedTax.plannerYear(now: now)
+    /// The tax year a job's Gross belongs to: its own year (a job paid in early January counts toward the new year, even
+    /// while last year's last installment is still due).
+    static func year(of job: Transaction) -> Int { Calendar.current.component(.year, from: job.date) }
+
+    /// The share of Gross to set aside for a tax year (0 when there's nothing to estimate yet).
+    static func rate(transactions: [Transaction], settings: FinanceSettings?, year: Int, now: Date = .now) -> Double {
         let report = ScheduleC.report(entries: transactions.map(\.ledgerEntry), year: year)
-        return EstimatedTax.plan(report: report, profile: settings?.taxProfile ?? TaxProfile(), paidFederal: 0, paidState: 0, reserve: 0, now: now).setAsideRate
+        // For a past year, project as of its end.
+        let asOf = Calendar.current.component(.year, from: now) > year ? (Calendar.current.date(from: DateComponents(year: year + 1, month: 1, day: 1)) ?? now) : now
+        return EstimatedTax.plan(report: report, profile: settings?.taxProfile ?? TaxProfile(), paidFederal: 0, paidState: 0, reserve: 0, now: asOf).setAsideRate
     }
-    /// The set-aside (or "not now") recorded for a job, if any.
+    static func isDecision(_ allocation: NetAllocation) -> Bool { allocation.kind == AllocationKinds.grossTax || allocation.kind == AllocationKinds.grossTaxSkipped }
+    /// Every decision recorded for a job (more than one only if two devices decided before syncing).
+    static func decisions(for job: Transaction, allocations: [NetAllocation]) -> [NetAllocation] {
+        guard let id = job.jobID?.uuidString else { return [] }
+        return allocations.filter { $0.target == id && isDecision($0) }
+    }
+    /// The decision that counts: a set-aside beats a "not now".
     static func decision(for job: Transaction, allocations: [NetAllocation]) -> NetAllocation? {
-        guard let id = job.jobID?.uuidString else { return nil }
-        return allocations.first { $0.target == id && ($0.kind == AllocationKinds.grossTax || $0.kind == AllocationKinds.grossTaxSkipped) }
+        let all = decisions(for: job, allocations: allocations)
+        return all.first { $0.kind == AllocationKinds.grossTax } ?? all.first
     }
-    /// Recent Gross payments with no decision yet, newest first.
-    static func pending(transactions: [Transaction], allocations: [NetAllocation], now: Date = .now) -> [Transaction] {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -offerDays, to: now) ?? .distantPast
-        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.jobID != nil && $0.amount > 0 && $0.date >= cutoff && $0.date <= now && decision(for: $0, allocations: allocations) == nil }
+    /// Recent Gross payments, since the feature started, with no decision yet; newest first.
+    static func pending(transactions: [Transaction], allocations: [NetAllocation], since: Date?, now: Date = .now) -> [Transaction] {
+        let cutoff = max(Calendar.current.date(byAdding: .day, value: -offerDays, to: now) ?? .distantPast, since.map { Calendar.current.startOfDay(for: $0) } ?? .distantPast)
+        let decided = Set(allocations.filter(isDecision).map(\.target))
+        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.amount > 0 && $0.date >= cutoff && $0.date <= now && $0.jobID.map { !decided.contains($0.uuidString) } == true }
             .sorted { $0.date > $1.date }
     }
     /// Records the decision. The set-aside belongs to the month the job paid, so it covers that month's tax line.
@@ -125,48 +153,57 @@ struct TaxSetAsideCard: View {
     let transactions: [Transaction]
 
     var body: some View {
-        let pending = JobTaxSetAside.pending(transactions: transactions, allocations: allocations)
-        let rate = JobTaxSetAside.rate(transactions: transactions, settings: FinanceSettings.pick(settingsList))
-        if let job = pending.first, rate > 0 {
-            let amount = TaxSetAside.amount(gross: job.amount, rate: rate)
-            VStack(alignment: .leading, spacing: 10) {
-                Label("\(job.title) paid \(job.amount.money)", systemImage: "percent").font(.headline)
-                Text("Set aside \(amount.money) (\(rate.formatted(.percent.precision(.fractionLength(0))))) for this year’s taxes? Move it to your tax savings, and Margin counts it in your tax reserve.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                HStack {
-                    Button("Set aside \(amount.money)") { JobTaxSetAside.record(job, amount: amount, in: context) }.buttonStyle(.borderedProminent).tint(.marginInk)
-                    Button("Not now") { JobTaxSetAside.record(job, amount: 0, in: context) }.buttonStyle(.bordered)
-                }
-                if pending.count > 1 { Text("\(pending.count - 1) more in Plan › Income").font(.caption).foregroundStyle(.secondary) }
-            }.frame(maxWidth: .infinity, alignment: .leading).marginCard()
+        let settings = FinanceSettings.pick(settingsList)
+        let pending = JobTaxSetAside.pending(transactions: transactions, allocations: allocations, since: settings?.taxSetAsideSince)
+        if let job = pending.first {
+            let rate = JobTaxSetAside.rate(transactions: transactions, settings: settings, year: JobTaxSetAside.year(of: job))
+            if rate > 0 { card(job, rate: rate, more: pending.count - 1) }
         }
+    }
+
+    @ViewBuilder private func card(_ job: Transaction, rate: Double, more: Int) -> some View {
+        let amount = TaxSetAside.amount(gross: job.amount, rate: rate)
+        VStack(alignment: .leading, spacing: 10) {
+                Label("\(job.title) paid \(job.amount.money)", systemImage: "percent").font(.headline)
+                Text("Set aside \(amount.money) (\(rate.formatted(.percent.precision(.fractionLength(0))))) for \(String(JobTaxSetAside.year(of: job))) taxes? Move it to your tax savings, and Margin counts it in your tax reserve.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                ViewThatFits(in: .horizontal) {
+                    HStack { setAsideButtons(job, amount: amount) }
+                    VStack(alignment: .leading) { setAsideButtons(job, amount: amount) }
+                }
+                if more > 0 { Text("\(more) more in Plan › Income").font(.caption).foregroundStyle(.secondary) }
+        }.frame(maxWidth: .infinity, alignment: .leading).marginCard()
+    }
+
+    @ViewBuilder private func setAsideButtons(_ job: Transaction, amount: Double) -> some View {
+        Button("Set aside \(amount.money)") { JobTaxSetAside.record(job, amount: amount, in: context) }.buttonStyle(.borderedProminent).tint(.marginInk)
+        Button("Not now") { JobTaxSetAside.record(job, amount: 0, in: context) }.buttonStyle(.bordered)
+            .accessibilityLabel("Not now: don’t set aside tax for \(job.title)")
     }
 }
 
 /// Plan › Income job card: the set-aside for this job, or an offer to make one.
 struct JobTaxSetAsideRow: View {
     @Environment(\.modelContext) private var context
-    @Query private var allocations: [NetAllocation]
-    @Query private var settingsList: [FinanceSettings]
-    let job: Transaction; let transactions: [Transaction]
+    let job: Transaction
+    /// This job's decisions and its year's set-aside rate, computed once by the list rather than per row.
+    let decisions: [NetAllocation]; let rate: Double
 
     var body: some View {
-        let decision = JobTaxSetAside.decision(for: job, allocations: allocations)
+        let decision = decisions.first { $0.kind == AllocationKinds.grossTax } ?? decisions.first
         if let decision, decision.kind == AllocationKinds.grossTax {
             HStack {
                 Label("\(decision.amount.money) set aside for taxes", systemImage: "checkmark.circle.fill").font(.caption.bold()).foregroundStyle(.green)
                 Spacer()
-                Button("Undo") { context.delete(decision); try? context.save() }.font(.caption.bold()).tint(.marginCoral)
+                Button("Undo") { decisions.forEach(context.delete); try? context.save() }.font(.caption.bold()).tint(.marginCoral)
+                    .accessibilityLabel("Undo the tax set-aside for \(job.title)")
             }
-        } else if job.amount > 0 {
-            let rate = JobTaxSetAside.rate(transactions: transactions, settings: FinanceSettings.pick(settingsList))
-            if rate > 0 {
-                let amount = TaxSetAside.amount(gross: job.amount, rate: rate)
-                Button {
-                    if let decision { context.delete(decision) }   // a "not now" is replaced by the set-aside
-                    JobTaxSetAside.record(job, amount: amount, in: context)
-                } label: { Label("Set aside \(amount.money) for taxes", systemImage: "percent") }.font(.caption.bold()).tint(.marginInk)
-            }
+        } else if job.amount > 0, rate > 0 {
+            let amount = TaxSetAside.amount(gross: job.amount, rate: rate)
+            Button {
+                decisions.forEach(context.delete)   // a "not now" is replaced by the set-aside
+                JobTaxSetAside.record(job, amount: amount, in: context)
+            } label: { Label("Set aside \(amount.money) for taxes", systemImage: "percent") }.font(.caption.bold()).tint(.marginInk)
         }
     }
 }
@@ -203,7 +240,11 @@ enum Reminders {
                                      paidFederal: yearPayments.filter { !$0.isState }.reduce(0) { $0 + $1.amount },
                                      paidState: yearPayments.filter(\.isState).reduce(0) { $0 + $1.amount }, reserve: 0, now: now)
         let taxDue = plan.next.map { (date: $0.dueDate, amount: plan.dueNextFederal + plan.dueNextState, quarter: $0.quarter) }
-        let plans = ReminderSchedule.plan(bills: bills, leftToAssign: NetAssignment.leftToAssign(transactions: transactions, allocations: allocations, now: now),
+        let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        let paidRecently = Set(transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.amount > 0 && $0.date >= weekAgo && $0.date <= now }.map(\.category))
+        let netArrived = transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" && $0.date <= now }.map(\.date).max()
+        let plans = ReminderSchedule.plan(bills: bills, paidRecently: paidRecently,
+                                          leftToAssign: NetAssignment.leftToAssign(transactions: transactions, allocations: allocations, now: now), netArrived: netArrived,
                                           nextTaxDue: taxDue, includeBills: settings.remindBills, includeNet: settings.remindNet,
                                           includeTaxes: settings.remindTaxes, now: now)
         for reminder in plans.prefix(50) {   // iOS keeps at most 64 pending per app
@@ -239,7 +280,12 @@ struct RemindersSection: View {
                 Text("Notifications are off for Margin. Turn them on in the Settings app › Margin › Notifications.").font(.caption).foregroundStyle(Color.marginCoral)
             }
         } header: { Text("Reminders") } footer: {
-            Text("At 9 AM: two days before a bill is due, the day after Net arrives if it isn’t assigned, and a week before an estimated-tax payment.")
+            Text("At 9 AM: two days before a bill is due, the morning after Net arrives if it’s still unassigned, and a week before an estimated-tax payment.")
+        }
+        .task {
+            // Reflect a change made in the Settings app since the last visit.
+            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            denied = status == .denied && (settings.remindBills || settings.remindNet || settings.remindTaxes)
         }
     }
 

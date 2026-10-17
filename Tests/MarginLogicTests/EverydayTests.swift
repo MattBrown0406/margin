@@ -20,6 +20,16 @@ private func d(_ y: Int, _ m: Int, _ day: Int, _ h: Int = 12) -> Date { utc.date
         #expect(MerchantRules.category(for: "Safeway", scope: "personal", rules: rules, options: ["Fuel"]) == nil)
     }
 
+    @Test func paymentMethodsAreNotMerchants() {
+        #expect(MerchantRules.learnableKey("CHECK 1001") == nil)
+        #expect(MerchantRules.learnableKey("Zelle") == nil)
+        #expect(MerchantRules.learnableKey("ATM WITHDRAWAL 0042") == nil)
+        #expect(MerchantRules.learnableKey("ZELLE TO JOHN SMITH") == "zelle to john")   // names a real payee, so it's kept
+        #expect(MerchantRules.learnableKey("Safeway") == "safeway")
+        let checks = [MerchantRuleInfo(key: "check", scope: "personal", category: "Mortgage", updatedAt: d(2026, 1, 1))]
+        #expect(MerchantRules.category(for: "CHECK 1002", scope: "personal", rules: checks, options: ["Mortgage"]) == nil)
+    }
+
     @Test func unknownOrUnnamedMerchantsHaveNoRule() {
         #expect(MerchantRules.category(for: "Costco", scope: "personal", rules: rules, options: ["Groceries"]) == nil)
         #expect(MerchantRules.category(for: "POS 1234", scope: "personal", rules: rules, options: ["Groceries"]) == nil)
@@ -61,6 +71,24 @@ private func d(_ y: Int, _ m: Int, _ day: Int, _ h: Int = 12) -> Date { utc.date
         let feb = ReminderSchedule.plan(bills: [(name: "Rent", dueDay: 31, amount: 1500, paidThisMonth: false)], leftToAssign: 0, nextTaxDue: nil,
                                         includeBills: true, includeNet: false, includeTaxes: false, now: d(2027, 2, 10), calendar: utc)
         #expect(feb.first.map { utc.dateComponents([.month, .day], from: $0.date) } == DateComponents(month: 2, day: 26))
+    }
+
+    @Test func aBillPaidEarlyIsNotReminded() {
+        let rent: [(name: String, dueDay: Int, amount: Double, paidThisMonth: Bool)] = [(name: "Rent", dueDay: 1, amount: 1500, paidThisMonth: false)]
+        let oct28 = d(2026, 10, 28, 8)
+        // The 40-day window from Oct 28 reaches December's rent too.
+        #expect(ReminderSchedule.plan(bills: rent, leftToAssign: 0, nextTaxDue: nil, includeBills: true, includeNet: false, includeTaxes: false, now: oct28, calendar: utc).map(\.id) == ["bill|Rent|2026-11", "bill|Rent|2026-12"])
+        // Paid on the 27th: November's is covered; December's still gets its reminder.
+        #expect(ReminderSchedule.plan(bills: rent, paidRecently: ["Rent"], leftToAssign: 0, nextTaxDue: nil, includeBills: true, includeNet: false, includeTaxes: false, now: oct28, calendar: utc).map(\.id) == ["bill|Rent|2026-12"])
+    }
+
+    @Test func netReminderIsTheMorningAfterItArrived() {
+        // Arrived Oct 14; it's Oct 16 at 8 AM, so the "morning after" has passed: today at 9.
+        let early = ReminderSchedule.plan(bills: [], leftToAssign: 500, netArrived: d(2026, 10, 14), nextTaxDue: nil, includeBills: false, includeNet: true, includeTaxes: false, now: d(2026, 10, 16, 8), calendar: utc)
+        #expect(early.first.map { utc.dateComponents([.day, .hour], from: $0.date) } == DateComponents(day: 16, hour: 9))
+        // Arrived this afternoon: tomorrow at 9.
+        let fresh = ReminderSchedule.plan(bills: [], leftToAssign: 500, netArrived: d(2026, 10, 16, 14), nextTaxDue: nil, includeBills: false, includeNet: true, includeTaxes: false, now: d(2026, 10, 16, 15), calendar: utc)
+        #expect(fresh.first.map { utc.dateComponents([.day, .hour], from: $0.date) } == DateComponents(day: 17, hour: 9))
     }
 
     @Test func netTomorrowMorningOnlyWhenSomethingIsWaiting() {
