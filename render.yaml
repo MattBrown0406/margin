@@ -1,0 +1,44 @@
+# Render blueprint for Margin's bank service (backend/). Render > New > Blueprint > this repo.
+# Secrets marked `sync: false` are entered in Render's dashboard when the blueprint is applied; they never live in git.
+services:
+  - type: web
+    name: margin-bank
+    runtime: node
+    rootDir: backend
+    # A persistent disk needs a paid instance; the service keeps its encrypted data in one file on that disk.
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: margin-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_FILE
+        value: /var/data/margin-bank-data.json
+      # Plaid: "sandbox" until Plaid approves Production, then switch to "production" and the production secret.
+      - key: PLAID_ENV
+        value: sandbox
+      - key: PLAID_CLIENT_ID
+        sync: false
+      - key: PLAID_SECRET
+        sync: false
+      # 64 hex characters (openssl rand -hex 32). Keep a copy somewhere safe: losing it makes stored bank links unreadable.
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      # Signs the app's sessions; Render generates it. Changing it later just signs everyone out.
+      - key: MARGIN_JWT_SECRET
+        generateValue: true
+      - key: MARGIN_JWT_ISSUER
+        value: margin-bank-service
+      - key: MARGIN_JWT_AUDIENCE
+        value: margin-bank-api
+      # Sign in with Apple: identity tokens must be issued to this app.
+      - key: APPLE_BUNDLE_ID
+        value: com.mattbrown.margin

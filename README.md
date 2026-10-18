@@ -90,6 +90,10 @@ swift test            # money logic: safe-to-spend, forecast, job profit, Schedu
 cd backend && npm test
 ```
 
+## Deploying the bank service (Render)
+
+`render.yaml` sets up the service: Render > **New** > **Blueprint** > this repository. When asked, enter `PLAID_CLIENT_ID`, `PLAID_SECRET` (the sandbox secret to start), and `TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`; keep a copy). Everything else is preset. Once it's live, put its `https://….onrender.com` address in the app's `MARGIN_API_BASE_URL` build setting. Switch `PLAID_ENV` to `production` (with the production secret) once Plaid approves Production.
+
 ## Secure bank service
 
 The backend exchanges Plaid's one-time public tokens, encrypts long-lived access tokens with AES-256-GCM, and exposes authenticated read-only account, transaction-sync, and disconnect routes. Plaid credentials and access tokens are never returned to the app or written to logs.
