@@ -1,13 +1,13 @@
-// "Ask Margin": explains an affordability verdict the phone already computed, using Claude.
+// "Ask Bedrock": explains an affordability verdict the phone already computed, using Claude.
 // The SDK is loaded lazily so tests and the bank routes run without it installed.
 const httpError = (status, message, extra = {}) => Object.assign(new Error(message), { status, expose: true, ...extra });
 // A completed response is billed even when it carries no usable text, so its quota is never handed back.
-const billedFailure = () => httpError(502, 'Ask Margin could not answer right now', { billed: true });
+const billedFailure = () => httpError(502, 'Ask Bedrock could not answer right now', { billed: true });
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const MAX_TOKENS = 3000;
 const CONTEXT_MAX_DEPTH = 6, CONTEXT_MAX_ENTRIES = 400;
 
-export const SYSTEM_PROMPT = `You are Margin's budgeting assistant. The person you help is self-employed: their income arrives per job rather than as a salary. "Gross" is what a job paid into their business account; "Net" is what they then transferred to their personal account to live on.
+export const SYSTEM_PROMPT = `You are Bedrock's budgeting assistant. The person you help is self-employed: their income arrives per job rather than as a salary. "Gross" is what a job paid into their business account; "Net" is what they then transferred to their personal account to live on.
 
 You receive a budget snapshot (JSON computed on their phone) and one question, usually "can I afford this?".
 - Answer in 120 words or fewer, in plain, warm, shame-free language. No lectures.
@@ -20,7 +20,7 @@ You receive a budget snapshot (JSON computed on their phone) and one question, u
 // Pure handling of a Messages API response: refusal first, then the joined text. A response cut off at
 // max_tokens still returns whatever text it produced; with none (all spent thinking) it is a 502.
 export function readAnswer(response) {
-  if (response?.stop_reason === 'refusal') throw httpError(422, "Margin can't help with that question.");
+  if (response?.stop_reason === 'refusal') throw httpError(422, "Bedrock can't help with that question.");
   const text = (Array.isArray(response?.content) ? response.content : []).filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text).join('').trim();
   if (response?.stop_reason === 'max_tokens') { if (text) return text; throw billedFailure(); }
   if (!text) throw billedFailure();
@@ -51,8 +51,8 @@ export function isAskContext(context) {
 // Maps SDK errors (most specific first) to the statuses the app returns; anything else is rethrown untouched.
 export function mapSdkError(error, Anthropic) {
   if (error instanceof Anthropic.RateLimitError) return httpError(429, 'Assistant is busy, try again shortly');
-  if (error instanceof Anthropic.AuthenticationError) return httpError(503, "Ask Margin isn't configured");
-  if (error instanceof Anthropic.APIError) return httpError(502, 'Ask Margin could not answer right now');
+  if (error instanceof Anthropic.AuthenticationError) return httpError(503, "Ask Bedrock isn't configured");
+  if (error instanceof Anthropic.APIError) return httpError(502, 'Ask Bedrock could not answer right now');
   return error;
 }
 
@@ -64,7 +64,7 @@ export function createAssistant(config, { loadSdk = () => import('@anthropic-ai/
   async function client() {
     if (sdk) return sdk;
     let Anthropic;
-    try { ({ default: Anthropic } = await loadSdk()); } catch (error) { console.error('Ask Margin: @anthropic-ai/sdk could not be loaded; run npm install in backend/', error.message); throw httpError(503, "Ask Margin isn't configured"); }
+    try { ({ default: Anthropic } = await loadSdk()); } catch (error) { console.error('Ask Bedrock: @anthropic-ai/sdk could not be loaded; run npm install in backend/', error.message); throw httpError(503, "Ask Bedrock isn't configured"); }
     sdk = { Anthropic, client: new Anthropic({ apiKey: config.anthropicApiKey, maxRetries: 1 }) };
     return sdk;
   }

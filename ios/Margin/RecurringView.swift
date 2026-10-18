@@ -46,7 +46,7 @@ struct RecurringChargesSection: View {
 
             HStack { Text("Recurring charges").font(.title3.bold()); Spacer(); Text("\(active.reduce(0) { $0 + $1.monthlyCost }.money)/mo").font(.subheadline.bold()) }
             Text("Found in your transactions. Check for ones you no longer use.").font(.subheadline).foregroundStyle(.secondary)
-            if recurring.isEmpty { Text("Nothing repeating yet. Margin needs a few months of transactions (bank imports help).").font(.subheadline).foregroundStyle(.secondary) }
+            if recurring.isEmpty { Text("Nothing repeating yet. Bedrock needs a few months of transactions (bank imports help).").font(.subheadline).foregroundStyle(.secondary) }
             ForEach(recurring) { charge in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .top) {

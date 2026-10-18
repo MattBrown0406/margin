@@ -190,7 +190,7 @@ struct TaxSetAsideCard: View {
         let amount = TaxSetAside.amount(gross: job.amount, rate: rate)
         VStack(alignment: .leading, spacing: 10) {
                 Label("\(job.title) paid \(job.amount.money)", systemImage: "percent").font(.headline)
-                Text("Set aside \(amount.money) (\(rate.formatted(.percent.precision(.fractionLength(0))))) for \(String(JobTaxSetAside.year(of: job))) taxes? Move it to your tax savings, and Margin counts it in your tax reserve.")
+                Text("Set aside \(amount.money) (\(rate.formatted(.percent.precision(.fractionLength(0))))) for \(String(JobTaxSetAside.year(of: job))) taxes? Move it to your tax savings, and Bedrock counts it in your tax reserve.")
                     .font(.subheadline).foregroundStyle(.secondary)
                 ViewThatFits(in: .horizontal) {
                     HStack { setAsideButtons(job, amount: amount) }
@@ -306,7 +306,7 @@ struct RemindersSection: View {
             Toggle("Net waiting to be assigned", isOn: binding(\.remindNet))
             Toggle("Quarterly tax deadlines", isOn: binding(\.remindTaxes))
             if denied {
-                Text("Notifications are off for Margin. Turn them on in the Settings app › Margin › Notifications.").font(.caption).foregroundStyle(Color.marginCoral)
+                Text("Notifications are off for Bedrock. Turn them on in the Settings app › Bedrock › Notifications.").font(.caption).foregroundStyle(Color.marginCoral)
             }
         } header: { Text("Reminders") } footer: {
             Text("At 9 AM: two days before a bill is due, the morning after Net arrives if it’s still unassigned, and a week before an estimated-tax payment.")

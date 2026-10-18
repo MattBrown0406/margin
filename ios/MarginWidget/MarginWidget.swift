@@ -41,12 +41,12 @@ struct SafeToSpendWidgetView: View {
     var body: some View {
         switch family {
         case .accessoryInline:
-            Text(entry.safe.map { "Safe today \($0.safeToday.money)" } ?? "Open Margin")
+            Text(entry.safe.map { "Safe today \($0.safeToday.money)" } ?? "Open Bedrock")
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
                 Text("SAFE TODAY").font(.caption2.bold())
                 Text(entry.safe?.safeToday.money ?? "—").font(.title2.bold()).widgetAccentable()
-                Text(entry.safe.map { "\($0.flexibleLeft.money) left · \($0.daysLeft)d" } ?? "Open Margin to update").font(.caption2)
+                Text(entry.safe.map { "\($0.flexibleLeft.money) left · \($0.daysLeft)d" } ?? "Open Bedrock to update").font(.caption2)
             }
         default:
             VStack(alignment: .leading, spacing: 4) {
@@ -56,7 +56,7 @@ struct SafeToSpendWidgetView: View {
                     Text(safe.safeToday.money).font(.system(size: 38, weight: .bold, design: .rounded)).foregroundStyle(.white).minimumScaleFactor(0.5).lineLimit(1)
                     Text("\(safe.flexibleLeft.money) flexible · \(safe.daysLeft) days").font(.caption2).foregroundStyle(Color.widgetLime)
                 } else {
-                    Text("Open Margin to update this month").font(.subheadline.bold()).foregroundStyle(.white)
+                    Text("Open Bedrock to update this month").font(.subheadline.bold()).foregroundStyle(.white)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }

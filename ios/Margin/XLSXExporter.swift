@@ -61,7 +61,7 @@ enum XLSXExporter {
         for key in grouped.keys.sorted() { categoryRows.append([.text(key), .number(grouped[key, default: []].reduce(0) { $0 + $1.amount })]) }
 
         let summaryRows: [[WorkbookCell]] = [
-            [.text("MARGIN MONTHLY REPORT")],
+            [.text("BEDROCK MONTHLY REPORT")],
             [.text("Report month"), .text(Date.now.formatted(.dateTime.month(.wide).year()))],
             [.text("Business gross received"), .number(gross)],
             [.text("Business expenses"), .number(businessSpend)],
@@ -86,7 +86,7 @@ enum XLSXExporter {
         scheduleRows += scheduleC.lines.map { [.text($0.line), .text($0.label), .number($0.amount), .text($0.note ?? "")] }
         scheduleRows += [[.text("28"), .text("Total expenses"), .number(scheduleC.totalExpenses), .text("")],
                          [.text("31"), .text("Net profit"), .number(scheduleC.netProfit), .text("")],
-                         [.text(""), .text("Prepared from Margin’s business ledger. A starting point for your tax preparer, not tax advice."), .text(""), .text("")]]
+                         [.text(""), .text("Prepared from Bedrock’s business ledger. A starting point for your tax preparer, not tax advice."), .text(""), .text("")]]
 
         let sheets = [
             WorkbookSheet(name: "Summary", rows: summaryRows),
@@ -146,8 +146,8 @@ enum XLSXExporter {
     private static func workbook(sheetNames: [String]) -> String { xmlHeader + "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets>" + sheetNames.enumerated().map { "<sheet name=\"\(escape($0.element))\" sheetId=\"\($0.offset + 1)\" r:id=\"rId\($0.offset + 1)\"/>" }.joined() + "</sheets></workbook>" }
     private static func workbookRelationships(sheetCount: Int) -> String { xmlHeader + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" + (1...sheetCount).map { "<Relationship Id=\"rId\($0)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet\($0).xml\"/>" }.joined() + "<Relationship Id=\"rId\(sheetCount + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>" }
     private static let styles = xmlHeader + "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><numFmts count=\"1\"><numFmt numFmtId=\"164\" formatCode=\"$#,##0.00\"/></numFmts><fonts count=\"2\"><font><sz val=\"11\"/><name val=\"Aptos\"/></font><font><b/><color rgb=\"FFFFFFFF\"/><sz val=\"11\"/><name val=\"Aptos\"/></font></fonts><fills count=\"3\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill><fill><patternFill patternType=\"solid\"><fgColor rgb=\"FF132124\"/><bgColor indexed=\"64\"/></patternFill></fill></fills><borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs><cellXfs count=\"3\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/><xf numFmtId=\"0\" fontId=\"1\" fillId=\"2\" borderId=\"0\" xfId=\"0\" applyFill=\"1\"/><xf numFmtId=\"164\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyNumberFormat=\"1\"/></cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>"
-    private static func coreProperties(created: Date) -> String { xmlHeader + "<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><dc:title>Margin Financial Report</dc:title><dc:creator>Margin</dc:creator><dcterms:created xsi:type=\"dcterms:W3CDTF\">\(ISO8601DateFormatter().string(from: created))</dcterms:created></cp:coreProperties>" }
-    private static func appProperties(sheetNames: [String]) -> String { xmlHeader + "<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\" xmlns:vt=\"http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes\"><Application>Margin</Application><TitlesOfParts><vt:vector size=\"\(sheetNames.count)\" baseType=\"lpstr\">" + sheetNames.map { "<vt:lpstr>\(escape($0))</vt:lpstr>" }.joined() + "</vt:vector></TitlesOfParts></Properties>" }
+    private static func coreProperties(created: Date) -> String { xmlHeader + "<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"><dc:title>Bedrock Financial Report</dc:title><dc:creator>Bedrock</dc:creator><dcterms:created xsi:type=\"dcterms:W3CDTF\">\(ISO8601DateFormatter().string(from: created))</dcterms:created></cp:coreProperties>" }
+    private static func appProperties(sheetNames: [String]) -> String { xmlHeader + "<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\" xmlns:vt=\"http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes\"><Application>Bedrock</Application><TitlesOfParts><vt:vector size=\"\(sheetNames.count)\" baseType=\"lpstr\">" + sheetNames.map { "<vt:lpstr>\(escape($0))</vt:lpstr>" }.joined() + "</vt:vector></TitlesOfParts></Properties>" }
 }
 
 private enum ZipStore {

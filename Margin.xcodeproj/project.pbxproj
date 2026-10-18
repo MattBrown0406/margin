@@ -491,7 +491,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Margin;
+				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -513,7 +513,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Margin;
+				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -534,7 +534,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Margin;
+				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -555,7 +555,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Margin;
+				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

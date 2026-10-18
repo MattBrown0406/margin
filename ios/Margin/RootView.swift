@@ -120,7 +120,7 @@ struct TodayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) { Text("MARGIN").font(.caption.bold()).tracking(2); Text("\(greeting), Matt").font(.title2.bold()) }
+                    VStack(alignment: .leading, spacing: 4) { Text("BEDROCK").font(.caption.bold()).tracking(2); Text("\(greeting), Matt").font(.title2.bold()) }
                     Spacer()
                     NavigationLink { AccountView() } label: { Image(systemName: "gearshape").font(.title3).padding(10) }.tint(.marginInk).accessibilityLabel("Settings")
                     Image("MarginLogo")
@@ -169,7 +169,7 @@ struct TodayView: View {
                 HStack { Text("Recent activity").font(.title3.bold()); Spacer(); NavigationLink("See all") { ActivityView(transactions: transactions) }.font(.subheadline.bold()) }
                 if categories.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Your budget isn’t set up yet. If you use Margin on another device, it arrives once iCloud syncs.").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Your budget isn’t set up yet. If you use Bedrock on another device, it arrives once iCloud syncs.").font(.subheadline).foregroundStyle(.secondary)
                         Button("Start with the starter budget") { StarterBudget.insert(into: context) }.buttonStyle(.borderedProminent).tint(.marginInk)
                     }.marginCard()
                 }
@@ -223,7 +223,7 @@ struct PlanView: View {
             if categories.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("No budget yet", systemImage: "icloud.and.arrow.down").font(.headline)
-                    Text("If you use Margin on another device, your budget appears here once iCloud finishes syncing. Starting fresh? Begin with the starter budget and adjust any line.").font(.subheadline).foregroundStyle(.secondary)
+                    Text("If you use Bedrock on another device, your budget appears here once iCloud finishes syncing. Starting fresh? Begin with the starter budget and adjust any line.").font(.subheadline).foregroundStyle(.secondary)
                     Button("Use the starter budget") { StarterBudget.insert(into: context) }.buttonStyle(.borderedProminent).tint(.marginInk)
                 }.marginCard()
             }
@@ -503,7 +503,7 @@ struct ReportsView: View {
             Button { exportDocument = MarginXLSXDocument(transactions: transactions, categories: categories); exporting = true } label: { Label("Export Excel (.xlsx)", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity).padding(5) }.buttonStyle(.borderedProminent).tint(.marginInk)
             Text("Exports Summary, Income & Jobs, Expenses, Budget, and Category Totals for this month, plus Job Profit and a Schedule C summary for the year.").font(.caption).foregroundStyle(.secondary)
         }.padding() }.background(Color.marginCream.ignoresSafeArea()).navigationBarHidden(true)
-        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: MarginXLSXDocument.contentType, defaultFilename: "Margin-Monthly-Report") { _ in }
+        .fileExporter(isPresented: $exporting, document: exportDocument, contentType: MarginXLSXDocument.contentType, defaultFilename: "Bedrock-Monthly-Report") { _ in }
     }
 }
 

@@ -52,14 +52,14 @@ async function fixture({ plaid = new FakePlaid(), store: wrap = s => s, config: 
 }
 const quietly = async (fn, sink = []) => { const original = console.warn; console.warn = (...args) => sink.push(args.join(' ')); try { return await fn(); } finally { console.warn = original; } };
 
-// ---- 1. Ask Margin cost controls ----
+// ---- 1. Ask Bedrock cost controls ----
 
 test('readAnswer returns partial text at max_tokens and 502s when nothing was written', () => {
   assert.equal(readAnswer({ stop_reason: 'max_tokens', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'It fits if' }] }), 'It fits if');
-  assert.throws(() => readAnswer({ stop_reason: 'max_tokens', content: [{ type: 'thinking', thinking: '' }] }), { status: 502, expose: true, message: 'Ask Margin could not answer right now' });
+  assert.throws(() => readAnswer({ stop_reason: 'max_tokens', content: [{ type: 'thinking', thinking: '' }] }), { status: 502, expose: true, message: 'Ask Bedrock could not answer right now' });
 });
 
-test('a global daily cap stops Ask Margin at capacity and hands the user slot back', async () => {
+test('a global daily cap stops Ask Bedrock at capacity and hands the user slot back', async () => {
   const askLimiter = createAskLimiter({ limit: 1 });
   const answered = [];
   const f = await fixture({ assistant: { async answer({ question }) { answered.push(question); return 'ok'; } }, askLimiter, config: { askDailyGlobalLimit: 2 } });
@@ -67,7 +67,7 @@ test('a global daily cap stops Ask Margin at capacity and hands the user slot ba
     assert.equal((await f.post('/v1/ask', { question: 'a', context: snapshot }, { auth: f.session('matt') })).status, 200);
     assert.equal((await f.post('/v1/ask', { question: 'b', context: snapshot }, { auth: f.session('ana') })).status, 200);
     const full = await f.post('/v1/ask', { question: 'c', context: snapshot }, { auth: f.session('bob') });
-    assert.deepEqual(full, { status: 429, data: { error: 'Ask Margin is at capacity today' } });
+    assert.deepEqual(full, { status: 429, data: { error: 'Ask Bedrock is at capacity today' } });
     assert.deepEqual(answered, ['a', 'b']);
     assert.equal(askLimiter.take('bob'), true, "bob's per-user slot was released");
   } finally { await f.close(); }
@@ -79,7 +79,7 @@ test('a global daily cap stops Ask Margin at capacity and hands the user slot ba
 test('failed questions (429/502/503) hand back both quota slots; answers and refusals keep them', async () => {
   let clock = 0, status = 0;
   const askLimiter = createAskLimiter({ now: () => clock }), askGlobalLimiter = createAskLimiter({ limit: 40, now: () => clock });
-  const assistant = { async answer() { if (status) throw Object.assign(new Error('Ask Margin could not answer right now'), { status, expose: true }); return 'ok'; } };
+  const assistant = { async answer() { if (status) throw Object.assign(new Error('Ask Bedrock could not answer right now'), { status, expose: true }); return 'ok'; } };
   const f = await fixture({ assistant, askLimiter, askGlobalLimiter });
   const ask = () => f.post('/v1/ask', { question: 'q', context: snapshot });
   try {

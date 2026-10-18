@@ -322,7 +322,7 @@ private struct SteadyPaycheckForm: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("YOUR MONTHLY PAYCHECK").font(.caption.bold()).foregroundStyle(.secondary)
                 Text(plan.paycheck.money).font(.system(size: 40, weight: .bold, design: .rounded))
-                Text(plan.monthsOfHistory == 0 ? "Record a few months of Net transfers and Margin will suggest an amount."
+                Text(plan.monthsOfHistory == 0 ? "Record a few months of Net transfers and Bedrock will suggest an amount."
                      : "Your Net averaged \(plan.averageMonthlyNet.money) a month over the last \(plan.monthsOfHistory) month\(plan.monthsOfHistory == 1 ? "" : "s") (lowest \(plan.lowestMonthNet.money)).")
                     .font(.subheadline).foregroundStyle(.secondary)
             }.padding(.vertical, 4)

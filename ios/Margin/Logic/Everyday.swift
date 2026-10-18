@@ -94,7 +94,7 @@ enum ReminderSchedule {
             let fire = at9(weekBefore, calendar: calendar)
             if fire > now {
                 plans.append(ReminderPlan(id: "tax|\(calendar.monthKey(for: due.date))", date: fire, title: "Q\(due.quarter) estimated tax due \(due.date.formatted(.dateTime.month(.abbreviated).day()))",
-                                          body: "About \(due.amount.money) is due. Record the payment in Margin once it's made."))
+                                          body: "About \(due.amount.money) is due. Record the payment in Bedrock once it's made."))
             }
         }
         return plans.sorted { $0.date < $1.date }

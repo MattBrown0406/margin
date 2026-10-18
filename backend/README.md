@@ -1,4 +1,4 @@
-# Margin bank-sync service
+# Bedrock bank-sync service
 
 A small read-only Plaid backend for Margin. The iOS app never receives Plaid secrets or long-lived access tokens.
 
@@ -60,18 +60,18 @@ Data files written by the earlier timestamp scheme still load: every user listed
 
 Deleting an account with no data also returns `200`. A link that completes after its session ended is refused with `401` and its Item is likewise removed at Plaid.
 
-### Ask Margin
+### Ask Bedrock
 
 `POST /v1/ask` sends the budget snapshot the phone computed (`context`, a plain JSON object at most 6 levels deep with at most 400 keys and array items in total, ≤ 8000 characters serialized) and a `question` (1–500 characters) to Claude, which explains the app's verdict in ≤ 120 words. The snapshot leaves the device and is sent to Anthropic, so disclose this in the privacy policy.
 
 - `400` invalid `question` or `context`
 - `422` "Margin can't help with that question." when Claude declines
-- `429` "Daily question limit reached" after 30 questions per user in a rolling 24 hours (a question that fails with `429`, `503` or an unbilled `502` hands its per-user and global slots back; answers, `422` refusals, and billed replies with no usable text count); `429` "Ask Margin is at capacity today" after `ASK_DAILY_GLOBAL_LIMIT` (default 2000) questions across all users in a rolling 24 hours (both in memory, per process); `429` "Assistant is busy, try again shortly" when Anthropic rate-limits
-- `502` upstream failure (including a reply cut off before any text); `503` "Ask Margin isn't configured" without `ANTHROPIC_API_KEY`
+- `429` "Daily question limit reached" after 30 questions per user in a rolling 24 hours (a question that fails with `429`, `503` or an unbilled `502` hands its per-user and global slots back; answers, `422` refusals, and billed replies with no usable text count); `429` "Ask Bedrock is at capacity today" after `ASK_DAILY_GLOBAL_LIMIT` (default 2000) questions across all users in a rolling 24 hours (both in memory, per process); `429` "Assistant is busy, try again shortly" when Anthropic rate-limits
+- `502` upstream failure (including a reply cut off before any text); `503` "Ask Bedrock isn't configured" without `ANTHROPIC_API_KEY`
 
 Each question is capped at `max_tokens: 3000` with `effort: "low"`, and the SDK retries a failed call at most once. A reply cut off at the token cap returns the text written so far.
 
-Ask Margin uses the official `@anthropic-ai/sdk` package, loaded only on the first question. Run `npm install` in `backend/` before enabling it; the other routes and the tests need no dependencies.
+Ask Bedrock uses the official `@anthropic-ai/sdk` package, loaded only on the first question. Run `npm install` in `backend/` before enabling it; the other routes and the tests need no dependencies.
 
 ## Local tests
 
@@ -92,12 +92,12 @@ npm test
    - `APPLE_BUNDLE_ID`: the iOS bundle identifier (required in production)
    - `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`: a Sign in with Apple key (.p8 PEM, which must be a P-256 EC key; literal `\n` allowed), so account deletion revokes the user's Apple tokens (App Store guideline 5.1.1(v)); set all three or none
    - `MARGIN_SESSION_TTL_DAYS`: session lifetime in days (default 30, 1–90)
-   - `ASK_DAILY_GLOBAL_LIMIT`: Ask Margin questions per rolling day across all users (default 2000)
-   - `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`, default `claude-opus-5-5`) to enable Ask Margin, after `npm install`
+   - `ASK_DAILY_GLOBAL_LIMIT`: Ask Bedrock questions per rolling day across all users (default 2000)
+   - `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`, default `claude-opus-5-5`) to enable Ask Bedrock, after `npm install`
 4. Replace the file store with a transactional managed database or mount encrypted persistent storage with backups.
 5. User sessions come from `POST /v1/auth/apple`; never bundle `MARGIN_JWT_SECRET` in the app.
 6. Configure an HTTPS domain and Plaid OAuth Universal Link.
-7. Add a privacy policy (including that Ask Margin sends the budget snapshot to Anthropic) and provider-required disclosures. In-app account deletion is `DELETE /v1/account`.
+7. Add a privacy policy (including that Ask Bedrock sends the budget snapshot to Anthropic) and provider-required disclosures. In-app account deletion is `DELETE /v1/account`.
 8. Verify Bank of America in Plaid Production Link with the account owner on a physical iPhone.
 
 This repository intentionally contains no live credentials.

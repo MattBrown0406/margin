@@ -12,7 +12,7 @@ export class PlaidClient {
     if (!response.ok) { const error = new Error(data.error_message || 'Plaid request failed'); error.status = data.error_code === 'ITEM_LOGIN_REQUIRED' ? 409 : 502; error.code = data.error_code; error.plaid = true; throw error; }
     return data;
   }
-  createLinkToken(userId, accessToken) { return this.call('/link/token/create', { user: { client_user_id: userId }, client_name: 'Margin', ...(accessToken ? { access_token: accessToken } : { products: ['transactions'], transactions: { days_requested: 180 } }), country_codes: ['US'], language: 'en', ...(this.config.plaidRedirectUri ? { redirect_uri: this.config.plaidRedirectUri } : {}) }); }
+  createLinkToken(userId, accessToken) { return this.call('/link/token/create', { user: { client_user_id: userId }, client_name: 'Bedrock', ...(accessToken ? { access_token: accessToken } : { products: ['transactions'], transactions: { days_requested: 180 } }), country_codes: ['US'], language: 'en', ...(this.config.plaidRedirectUri ? { redirect_uri: this.config.plaidRedirectUri } : {}) }); }
   exchange(publicToken) { return this.call('/item/public_token/exchange', { public_token: publicToken }); }
   accounts(accessToken) { return this.call('/accounts/get', { access_token: accessToken }); }
   remove(accessToken) { return this.call('/item/remove', { access_token: accessToken }); }

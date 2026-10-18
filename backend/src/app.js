@@ -145,14 +145,14 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         return json(res, 200, { signedOut: true });
       }
       if (req.method === 'POST' && pathname === '/v1/ask') {
-        if (!assistant) throw httpError(503, "Ask Margin isn't configured");
+        if (!assistant) throw httpError(503, "Ask Bedrock isn't configured");
         const input = await body(req), question = typeof input.question === 'string' ? input.question.trim() : '', context = input.context;
         if (!question || question.length > 500) throw httpError(400, 'question must be 1-500 characters');
         let size = Infinity;
         if (isAskContext(context)) try { size = JSON.stringify(context).length; } catch { /* rejected below */ }
         if (size > 8000) throw httpError(400, 'context must be an object of at most 8000 characters');
         if (!askLimiter.take(userId)) throw httpError(429, 'Daily question limit reached');
-        if (!askGlobalLimiter.take(GLOBAL_ASK_KEY)) { askLimiter.release(userId); throw httpError(429, 'Ask Margin is at capacity today'); }
+        if (!askGlobalLimiter.take(GLOBAL_ASK_KEY)) { askLimiter.release(userId); throw httpError(429, 'Ask Bedrock is at capacity today'); }
         let answer;
         try { answer = await assistant.answer({ question, context }); }
         catch (error) { if (ASK_UNCOUNTED.has(Number(error.status)) && !error.billed) { askLimiter.release(userId); askGlobalLimiter.release(GLOBAL_ASK_KEY); } throw error; }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The budget summary sent to Ask Margin: totals and category names only, never transactions or merchants.
+/// The budget summary sent to Ask Bedrock: totals and category names only, never transactions or merchants.
 struct AskContext: Encodable {
     struct Category: Encodable { let name: String; let planned: Double; let spentThisMonth: Double }
     struct Bill: Encodable { let name: String; let amount: Double; let dueDay: Int }
@@ -63,17 +63,17 @@ struct AffordView: View {
             Section {
                 Label(verdict.headline, systemImage: icon(verdict.level)).font(.headline).foregroundStyle(color(verdict.level))
                 ForEach(verdict.details, id: \.self) { Text($0).font(.subheadline) }
-            } header: { Text("Margin’s answer") } footer: { Text("Based on your flexible budget and the jobs you’ve booked. Your Peace Number is never counted as spendable.") }
+            } header: { Text("Bedrock’s answer") } footer: { Text("Based on your flexible budget and the jobs you’ve booked. Your Peace Number is never counted as spendable.") }
             Section {
                 if let answer { Text(answer).font(.subheadline) }
                 if let askError { Text(askError).font(.subheadline).foregroundStyle(.red) }
                 if MarginAPI.signedIn() != nil {
-                    Button { Task { await ask(verdict) } } label: { Label(answer == nil ? "Ask Margin for a plan" : "Ask again", systemImage: "sparkles") }.disabled(asking)
+                    Button { Task { await ask(verdict) } } label: { Label(answer == nil ? "Ask Bedrock for a plan" : "Ask again", systemImage: "sparkles") }.disabled(asking)
                     if asking { ProgressView() }
                 } else {
                     NavigationLink("Sign in to get a personal plan") { AccountView() }
                 }
-            } header: { Text("Ask Margin") } footer: { Text("Sends a summary of your budget totals, never your transactions, to Margin’s assistant.") }
+            } header: { Text("Ask Bedrock") } footer: { Text("Sends a summary of your budget totals, never your transactions, to Bedrock’s assistant.") }
         }
     }.numberPadDone().navigationTitle("Can I afford it?")
      .onChange(of: amount) { answer = nil; askError = nil }.onChange(of: monthOffset) { answer = nil; askError = nil }.onChange(of: what) { answer = nil; askError = nil }
