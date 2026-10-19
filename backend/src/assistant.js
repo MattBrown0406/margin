@@ -77,7 +77,7 @@ export function createAssistant(config, { loadSdk = () => import('@anthropic-ai/
       let response;
       try {
         response = await anthropic.beta.messages.create({
-          model: config.anthropicModel || 'claude-opus-5-5',
+          model: config.anthropicModel || 'claude-sonnet-5-5',
           max_tokens: MAX_TOKENS, // caps the cost of a single question (thinking included)
           betas: ['server-side-fallback-2026-07-01'],
           fallbacks: 'default', // server-side safety fallback

@@ -245,10 +245,10 @@ test('createAssistant is off without a key and sends the documented request thro
   class Anthropic { constructor(options) { this.options = options; constructed.push(options); this.beta = { messages: { create: async params => { requests.push(params); return outcome(); } } }; } }
   Object.assign(Anthropic, { APIError, RateLimitError, AuthenticationError });
   let loads = 0;
-  const assistant = createAssistant({ anthropicApiKey: 'sk-test', anthropicModel: 'claude-opus-5-5' }, { loadSdk: async () => { loads++; return { default: Anthropic }; } });
+  const assistant = createAssistant({ anthropicApiKey: 'sk-test', anthropicModel: 'claude-sonnet-5-5' }, { loadSdk: async () => { loads++; return { default: Anthropic }; } });
   assert.equal(await assistant.answer({ question: 'Can I?', context: snapshot }), 'Fits in November.');
   const sent = requests[0];
-  assert.deepEqual({ ...sent, system: undefined, messages: undefined }, { model: 'claude-opus-5-5', max_tokens: 3000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' }, system: undefined, messages: undefined });
+  assert.deepEqual({ ...sent, system: undefined, messages: undefined }, { model: 'claude-sonnet-5-5', max_tokens: 3000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' }, system: undefined, messages: undefined });
   assert.deepEqual(constructed, [{ apiKey: 'sk-test', maxRetries: 0, timeout: 50_000 }]);
   assert.equal(sent.system, SYSTEM_PROMPT);
   assert.deepEqual(sent.messages, [{ role: 'user', content: `Budget snapshot (JSON, computed on the user's phone):\n${JSON.stringify(snapshot)}\n\nQuestion: Can I?` }]);
@@ -269,7 +269,7 @@ test('createAssistant is off without a key and sends the documented request thro
 test('config validates the session TTL and defaults the new settings', () => {
   const base = { TOKEN_ENCRYPTION_KEY: encryptionKey };
   const config = loadConfig(base);
-  assert.deepEqual([config.appleBundleId, config.sessionTtlDays, config.anthropicApiKey, config.anthropicModel], ['', 30, '', 'claude-opus-5-5']);
+  assert.deepEqual([config.appleBundleId, config.sessionTtlDays, config.anthropicApiKey, config.anthropicModel], ['', 30, '', 'claude-sonnet-5-5']);
   assert.equal(loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: '90' }).sessionTtlDays, 90);
   for (const bad of ['0', '91', '365', '1.5', 'thirty', '-3']) assert.throws(() => loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: bad }), /MARGIN_SESSION_TTL_DAYS/);
 });

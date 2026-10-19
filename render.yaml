@@ -42,6 +42,9 @@ services:
       # Ask Bedrock (Claude). Without it, Ask Bedrock answers "isn't configured".
       - key: ANTHROPIC_API_KEY
         sync: false
+      # The Claude model Ask Bedrock uses.
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5-5
       # Sign in with Apple: identity tokens must be issued to this app.
       - key: APPLE_BUNDLE_ID
         value: com.mattbrown.margin

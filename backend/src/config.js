@@ -23,7 +23,7 @@ export function loadConfig(env = process.env) {
     applePrivateKey: (env.APPLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     sessionTtlDays: env.MARGIN_SESSION_TTL_DAYS ? Number(env.MARGIN_SESSION_TTL_DAYS) : 30,
     anthropicApiKey: env.ANTHROPIC_API_KEY || '',
-    anthropicModel: env.ANTHROPIC_MODEL || 'claude-opus-5-5',
+    anthropicModel: env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
     askDailyGlobalLimit: env.ASK_DAILY_GLOBAL_LIMIT ? Number(env.ASK_DAILY_GLOBAL_LIMIT) : 2000
   };
   if (!['sandbox', 'production'].includes(config.plaidEnv)) throw new Error('PLAID_ENV must be sandbox or production (Plaid retired its development environment)');
