@@ -262,7 +262,7 @@ struct BankAccountsView: View {
     /// transfer whose Gross arrived closest before it. Leaving it unlinked would count that job's Net twice.
     private func netJob(for tx: ImportedBankTransaction) -> UUID? {
         if let chosen = reviewJobs[tx.id] { return chosen }
-        guard let date = ISO8601DateFormatter.marginDate.date(from: tx.date) else { return nil }
+        guard let date = bankDay(tx.date) else { return nil }
         let transferred = Set(existing.filter { $0.isIncome && $0.incomeKind == "net" }.compactMap(\.jobID))
         return linkableJobs.filter { job in job.jobID.map { !transferred.contains($0) } == true && job.date <= date.addingTimeInterval(3 * 86_400) }
             .min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }?.jobID
@@ -270,8 +270,14 @@ struct BankAccountsView: View {
 
     /// Plaid ids change when a bank is reconnected, and manual entries have none, so also look for an
     /// existing entry with the same amount within three days.
+    /// A bank date ("2026-10-01") as noon that day, not midnight: it stays the same calendar day (and month, and tax
+    /// year) when the phone or another iCloud device is in a time zone up to 11 hours away. Imports are stored this way,
+    /// so comparisons with them use it too.
+    private func bankDay(_ text: String) -> Date? {
+        ISO8601DateFormatter.marginDate.date(from: text).map { Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: $0) ?? $0 }
+    }
     private func possibleDuplicate(of tx: ImportedBankTransaction) -> Transaction? {
-        guard let date = ISO8601DateFormatter.marginDate.date(from: tx.date) else { return nil }
+        guard let date = bankDay(tx.date) else { return nil }
         return existing.first { $0.externalID != tx.id && abs(abs($0.amount) - abs(tx.amount)) < 0.005 && abs($0.date.timeIntervalSince(date)) <= 3 * 86_400 }
     }
     private var skippedIDs: Set<String> { Set((try? JSONDecoder().decode([String].self, from: Data(skippedJSON.utf8))) ?? []) }
@@ -281,10 +287,7 @@ struct BankAccountsView: View {
     private func importTransaction(_ imported: ImportedBankTransaction) {
         guard !imported.pending, !existing.contains(where: { $0.externalID == imported.id }) else { return }
         let creditKind = imported.amount < 0 ? reviewIncomeKind(imported) : nil
-        // Noon, not midnight: a bank day stays the same calendar day (and month, and tax year) when the phone or another
-        // iCloud device is in a time zone up to 11 hours away.
-        let day = ISO8601DateFormatter.marginDate.date(from: imported.date) ?? .now
-        let date = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
+        let date = bankDay(imported.date) ?? .now
         let tx: Transaction
         if let kind = creditKind, kind != "refund" {
             let jobID = kind == "net" ? (netJob(for: imported) ?? UUID()) : UUID()

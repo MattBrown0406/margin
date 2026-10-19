@@ -10,6 +10,8 @@ struct MoneyFacts {
     /// What a typical month's plan needs from Net: for someone who sets tax aside from Gross, the tax line is
     /// funded that way instead.
     let plannedFromNet: Double
+    /// This month's plan less only the tax already set aside from Gross (not tax expected from jobs yet to pay).
+    let plannedFromNetThisMonth: Double
     let forecast: [ForecastMonth]
     /// The earliest booked job still expected to pay after `now`.
     let nextIncome: Date?
@@ -21,7 +23,7 @@ struct MoneyFacts {
         lines = categories.map(\.planLine)
         planned = categories.reduce(0) { $0 + $1.monthlyLimit }
         let taxLineName = settings?.taxLineName ?? "Tax reserve"
-        let taxLine = categories.filter { $0.name == taxLineName }.reduce(0) { $0 + $1.monthlyLimit }
+        let taxLine = categories.filter { $0.name.caseInsensitiveCompare(taxLineName) == .orderedSame }.reduce(0) { $0 + $1.monthlyLimit }
         let setAsides = allocations.filter { $0.kind == AllocationKinds.grossTax && $0.amount > 0 }
         // Counted the way Assign Net counts them: once, in the later of the job's month and the month it was made.
         let byMonth = Dictionary(setAsides.map { (max($0.monthKey, calendar.monthKey(for: $0.date)), $0.amount) }, uniquingKeysWith: +)
@@ -29,7 +31,10 @@ struct MoneyFacts {
         let yearAgo = calendar.date(byAdding: .year, value: -1, to: now) ?? now
         let setsAside = setAsides.contains { $0.date >= yearAgo }
         let rate = setsAside ? JobTaxSetAside.rate(transactions: transactions, settings: settings, year: calendar.component(.year, from: now), now: now) : 0
-        plannedFromNet = setsAside ? max(0, planned - taxLine) : planned
+        // A typical month's set-aside: the rate applied to the last year's average monthly Gross.
+        let yearGross = entries.filter { $0.isGross && $0.date >= yearAgo && $0.date <= now }.total
+        plannedFromNet = max(0, planned - min(taxLine, rate * yearGross / 12))
+        plannedFromNetThisMonth = max(0, planned - min(taxLine, byMonth[calendar.monthKey(for: now)] ?? 0))
         let expected = BookedJob.expectedIncome(bookedJobs, entries: entries)
         forecast = CashFlowForecast.months(entries: entries, booked: expected, plannedMonthly: planned, now: now, count: months,
                                            carriedIn: NetAssignment.carriedIn(transactions: transactions, allocations: allocations, now: now),

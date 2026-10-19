@@ -132,7 +132,7 @@ private struct ForecastMonthRow: View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(month.monthStart.formatted(.dateTime.month(.wide).year())).font(.subheadline.bold())
-                Text(month.receivedNet > 0 ? "\(month.receivedNet.money) in + \(month.expectedNet.money) booked · plan \(month.planned.money)" : "\(month.expectedNet.money) booked · plan \(month.planned.money)")
+                Text((month.carriedIn > 0.005 ? "\(month.carriedIn.money) from late last month + " : "") + (month.receivedNet > 0 ? "\(month.receivedNet.money) in + " : "") + "\(month.expectedNet.money) booked · plan \(month.planned.money)")
                     .font(.caption).foregroundStyle(.secondary)
                 if !month.overdueJobs.isEmpty { Text("Includes \(month.overdueJobs.count) overdue job\(month.overdueJobs.count == 1 ? "" : "s")").font(.caption2).foregroundStyle(Color.marginCoral) }
             }

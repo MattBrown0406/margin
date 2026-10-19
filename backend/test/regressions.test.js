@@ -224,3 +224,15 @@ test('stored transactions keep only the fields the app is shown', async () => {
     assert.deepEqual(stored.personal_finance_category, { primary: 'FOOD_AND_DRINK' });
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
+
+test('data saved before this version is normalised on read', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'margin-legacy-')), file = path.join(dir, 'data.json');
+  try {
+    await fs.writeFile(file, JSON.stringify({ users: { 'apple:u': { deleting: true, items: {}, transactions: { t1: { transaction_id: 't1', account_id: 'a', name: 'X', amount: 1, date: '2026-10-01', location: { city: 'Somewhere' }, margin_item_id: 'item' } } } } }));
+    const store = new FileStore(file, 'a'.repeat(64));
+    const user = await store.getUser('apple:u');
+    assert.equal(user.deleting, undefined);
+    assert.equal('location' in user.transactions.t1, false);
+    assert.equal(user.transactions.t1.margin_item_id, 'item');
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});

@@ -41,6 +41,12 @@ export class FileStore {
     if (!Array.isArray(data.pendingAppleRevocations)) data.pendingAppleRevocations = [];
     if (data.revocations && typeof data.revocations === 'object') for (const userId of Object.keys(data.revocations)) if (!(userId in Object.prototype) && !Object.hasOwn(data.sessionGenerations, userId)) data.sessionGenerations[userId] = 1;
     delete data.revocations;
+    // Data written before deletion markers and slimmed transactions: a bare `true` marker has no owner to clear it
+    // (a retried deletion sets a fresh one), and older transactions still carry Plaid's full detail.
+    for (const user of Object.values(data.users || {})) {
+      if (user?.deleting === true) delete user.deleting;
+      for (const [id, t] of Object.entries(user?.transactions || {})) if (t && ('location' in t || 'payment_meta' in t || 'counterparties' in t)) user.transactions[id] = { ...storedFields(t), margin_item_id: t.margin_item_id };
+    }
     return data;
   }
   async write(data) { await fs.mkdir(path.dirname(this.file), { recursive: true }); const temp = `${this.file}.${process.pid}.tmp`; await fs.writeFile(temp, JSON.stringify(data, null, 2), { mode: 0o600 }); await fs.rename(temp, this.file); }

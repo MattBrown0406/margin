@@ -31,7 +31,9 @@ struct ForecastMonth: Equatable, Identifiable {
     /// Late-last-month Net not assigned there, which funds this month (current month only).
     var carriedIn: Double = 0
 
-    var gap: Double { carriedIn + receivedNet + expectedNet - planned }
+    /// Net already in the personal account for this month: received in it plus carried in from late last month.
+    var inHand: Double { carriedIn + receivedNet }
+    var gap: Double { inHand + expectedNet - planned }
     var isShort: Bool { gap < -0.005 }
     /// Short once earlier months' surplus (money already in the personal account) is counted.
     var isRunningShort: Bool { cumulative < -0.005 }

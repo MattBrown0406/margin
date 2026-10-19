@@ -152,7 +152,7 @@ enum JobTaxSetAside {
     static func pending(transactions: [Transaction], allocations: [NetAllocation], since: Date?, now: Date = .now) -> [Transaction] {
         let cutoff = max(Calendar.current.date(byAdding: .day, value: -offerDays, to: now) ?? .distantPast, since.map { Calendar.current.startOfDay(for: $0) } ?? .distantPast)
         let decided = Set(allocations.filter(isDecision).map(\.target))
-        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.amount > 0 && $0.date >= cutoff && $0.date <= now && $0.jobID.map { !decided.contains($0.uuidString) } == true }
+        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.amount > 0 && $0.date >= cutoff && $0.date < Calendar.current.endOfDay(for: now) && $0.jobID.map { !decided.contains($0.uuidString) } == true }
             .sorted { $0.date > $1.date }
     }
     /// Records the decision. The set-aside belongs to the month the job paid, so it covers that month's tax line.
@@ -265,8 +265,8 @@ enum Reminders {
                                      paidState: yearPayments.filter(\.isState).reduce(0) { $0 + $1.amount }, reserve: 0, now: now)
         let taxDue = plan.next.map { (date: $0.dueDate, amount: plan.dueNextFederal + plan.dueNextState, quarter: $0.quarter) }
         let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-        let paidRecently = Set(transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.amount > 0 && $0.date >= weekAgo && $0.date <= now }.map(\.category))
-        let netArrived = transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" && $0.date <= now }.map(\.date).max()
+        let paidRecently = Set(transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.amount > 0 && $0.date >= weekAgo && $0.date < calendar.endOfDay(for: now) }.map(\.category))
+        let netArrived = transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" && $0.date < calendar.endOfDay(for: now) }.map(\.date).max()
         let plans = ReminderSchedule.plan(bills: bills, paidRecently: paidRecently,
                                           leftToAssign: NetAssignment.leftToAssign(transactions: transactions, allocations: allocations, now: now), netArrived: netArrived,
                                           nextTaxDue: taxDue, includeBills: settings.remindBills, includeNet: settings.remindNet,

@@ -95,7 +95,20 @@ struct RootView: View {
             // A copy's own jobID counts once for itself; anything above that is another record linking to it.
             func links(_ tx: Transaction) -> Int { tx.jobID.map { (references[$0] ?? 0) - 1 } ?? 0 }
             for group in duplicateGroups {
-                group.sorted { (-links($0), $0.id.uuidString) < (-links($1), $1.id.uuidString) }.dropFirst().forEach { context.delete($0); changed = true }
+                let sorted = group.sorted { (-links($0), $0.id.uuidString) < (-links($1), $1.id.uuidString) }
+                let survivor = sorted[0]
+                for loser in sorted.dropFirst() {
+                    // Anything still linked to the copy being removed (its Nets, expenses, tax decision) moves to the
+                    // survivor's job, so nothing is orphaned or counted twice; duplicate decisions are folded below.
+                    if let lost = loser.jobID {
+                        if survivor.jobID == nil { survivor.jobID = lost }
+                        if let kept = survivor.jobID, kept != lost {
+                            for tx in transactions where tx.jobID == lost && tx.id != loser.id { tx.jobID = kept }
+                            for allocation in allocations where allocation.target == lost.uuidString { allocation.target = kept.uuidString }
+                        }
+                    }
+                    context.delete(loser); changed = true
+                }
             }
         }
         // Each device may create money-tool settings before iCloud delivers the other's: fold them into the oldest.
@@ -221,9 +234,9 @@ struct PlanView: View {
     /// This month's Net (plus late Net carried in from last month) against what the plan needs from Net: tax set
     /// aside from Gross already funds that much of the tax line.
     private var left: Double {
-        let month = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
-                               settings: FinanceSettings.pick(financeSettings), months: 1).forecast.first
-        return netIncome + (month?.carriedIn ?? 0) - (month?.planned ?? planned)
+        let facts = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
+                               settings: FinanceSettings.pick(financeSettings), months: 1)
+        return netIncome + (facts.forecast.first?.carriedIn ?? 0) - facts.plannedFromNetThisMonth
     }
     private var groupNames: [String] { Array(Set(categories.map(\.groupName))).sorted() }
 

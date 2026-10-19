@@ -71,7 +71,7 @@ enum RecurringDetector {
 
     static func detect(entries: [LedgerEntry], now: Date, ignoredKeys: Set<String> = [], calendar: Calendar = .current) -> [RecurringCharge] {
         let since = calendar.date(byAdding: .day, value: -lookbackDays, to: now) ?? .distantPast
-        let expenses = entries.filter { !$0.isIncome && $0.amount > 0 && $0.date >= since && $0.date <= now }
+        let expenses = entries.filter { !$0.isIncome && $0.amount > 0 && $0.date >= since && $0.date < calendar.endOfDay(for: now) }
         var found: [RecurringCharge] = []
         for (key, group) in Dictionary(grouping: expenses, by: { merchantKey($0.title) }) where !key.isEmpty && !ignoredKeys.contains(key) {
             // One charge per day (a same-day split or duplicate isn't a new cycle).

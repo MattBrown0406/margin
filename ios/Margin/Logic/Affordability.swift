@@ -26,7 +26,7 @@ enum Affordability {
         if monthsAway <= 0 {
             // Only personal Net funds the plan. Until Net already received covers this month's plan, flexible
             // money on paper isn't money in hand, so never call it comfortable.
-            let notYetReceived = max(0, (target?.planned ?? 0) - (target?.receivedNet ?? 0))
+            let notYetReceived = max(0, (target?.planned ?? 0) - (target?.inHand ?? 0))
             let unfunded = notYetReceived
             let stillShort = max(0, -(target?.gap ?? 0))
             let unfundedNote: [String] = notYetReceived == 0 ? [] : stillShort > 0
@@ -42,7 +42,7 @@ enum Affordability {
             }
             let shortfall = amount - safe.flexibleLeft
             // Unassigned Net is spendable only as far as later months don't need this month's surplus.
-            let unassignedReceived = min(max(0, (target?.receivedNet ?? 0) - (target?.planned ?? 0)), target.map { headroom(at: $0, in: forecast) } ?? 0)
+            let unassignedReceived = min(max(0, (target?.inHand ?? 0) - (target?.planned ?? 0)), target.map { headroom(at: $0, in: forecast) } ?? 0)
             if unassignedReceived >= shortfall {
                 return AffordabilityVerdict(level: .tight, headline: "Only if you use income you haven’t assigned yet.",
                                             details: ["It’s \(shortfall.money) more than your flexible money left.", "You have \(unassignedReceived.money) of this month’s Net not assigned to the plan."],

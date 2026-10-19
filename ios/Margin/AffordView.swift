@@ -5,7 +5,7 @@ import SwiftData
 struct AskContext: Encodable {
     struct Category: Encodable { let name: String; let planned: Double; let spentThisMonth: Double }
     struct Bill: Encodable { let name: String; let amount: Double; let dueDay: Int }
-    struct Month: Encodable { let month: String; let receivedNet: Double; let expectedNet: Double; let planned: Double; let gap: Double; let runningTotal: Double }
+    struct Month: Encodable { let month: String; let carriedInFromLastMonth: Double; let receivedNet: Double; let expectedNet: Double; let planned: Double; let gap: Double; let runningTotal: Double }
     struct Reserve: Encodable { let saved: Double; let target: Double }
     struct Purchase: Encodable { let description: String; let amount: Double; let month: String }
 
@@ -124,7 +124,7 @@ struct AffordView: View {
             flexibleLeftThisMonth: safe.flexibleLeft, daysLeftInMonth: safe.daysLeft, monthlyPlan: categories.reduce(0) { $0 + $1.monthlyLimit },
             flexibleCategories: categories.filter(\.isFlexible).sorted { $0.name < $1.name }.map { c in .init(name: c.name, planned: c.monthlyLimit, spentThisMonth: monthSpend.filter { $0.category == c.name }.total) },
             bills: categories.compactMap { c in c.dueDay.map { .init(name: c.name, amount: c.monthlyLimit, dueDay: $0) } }.sorted { $0.dueDay < $1.dueDay },
-            forecast: forecast.map { .init(month: $0.monthStart.formatted(.dateTime.year().month(.twoDigits)), receivedNet: $0.receivedNet, expectedNet: $0.expectedNet, planned: $0.planned, gap: $0.gap, runningTotal: $0.cumulative) },
+            forecast: forecast.map { .init(month: $0.monthStart.formatted(.dateTime.year().month(.twoDigits)), carriedInFromLastMonth: $0.carriedIn, receivedNet: $0.receivedNet, expectedNet: $0.expectedNet, planned: $0.planned, gap: $0.gap, runningTotal: $0.cumulative) },
             peaceNumber: goal.map { .init(saved: $0.saved, target: $0.target) },
             purchase: .init(description: description, amount: amount, month: targetMonth.formatted(.dateTime.year().month(.twoDigits))),
             verdict: verdict)
