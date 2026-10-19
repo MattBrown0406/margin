@@ -45,14 +45,14 @@ struct ForecastView: View {
                 ForEach(awaiting, id: \.job.id) { item in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text(item.job.title).font(.headline); Spacer(); Text("\(item.remaining.money) Net still expected").font(.subheadline.bold()) }
-                        Text("Counted as coming to your personal account. Done moving money for this job? Tell Bedrock so the forecast stops expecting it.").font(.caption).foregroundStyle(.secondary)
+                        Text("Counted as coming to your personal account. Done moving money for this job? Tell Stabilis so the forecast stops expecting it.").font(.caption).foregroundStyle(.secondary)
                         Button("Done transferring") { item.job.status = "settled"; try? context.save() }.buttonStyle(.bordered).tint(.marginInk)
                     }.marginCard()
                 }
             }
             HStack { Text("Booked jobs").font(.title3.bold()); Spacer(); Button { booking = true } label: { Label("Book a job", systemImage: "plus") }.font(.subheadline.bold()).tint(.marginInk) }
             if openJobs.isEmpty {
-                ContentUnavailableView("Nothing booked", systemImage: "calendar.badge.plus", description: Text("Add interventions you’ve booked so Bedrock can show which months are covered."))
+                ContentUnavailableView("Nothing booked", systemImage: "calendar.badge.plus", description: Text("Add interventions you’ve booked so Stabilis can show which months are covered."))
             }
             ForEach(openJobs) { job in
                 let overdue = job.expectedDate < Calendar.current.startOfDay(for: .now)
@@ -167,7 +167,7 @@ struct BookJobView: View {
         Section {
             TextField("Expected Net to personal", text: $net).keyboardType(.decimalPad).onChange(of: net) { netEdited = !net.isEmpty && net != autoNet }
         } footer: {
-            Text(netRate.map { "Pre-filled at \(Int(($0 * 100).rounded()))% of Gross, what has reached your personal account over the last year." } ?? "Pre-filled at 60% of Gross until Bedrock learns your usual transfer.")
+            Text(netRate.map { "Pre-filled at \(Int(($0 * 100).rounded()))% of Gross, what has reached your personal account over the last year." } ?? "Pre-filled at 60% of Gross until Stabilis learns your usual transfer.")
         }
         Section { Button("Book job") { save() }.frame(maxWidth: .infinity).bold().disabled(!canSave) }
     }.numberPadDone().navigationTitle("Book a job").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } } } }

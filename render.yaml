@@ -39,10 +39,10 @@ services:
         value: margin-bank-service
       - key: MARGIN_JWT_AUDIENCE
         value: margin-bank-api
-      # Ask Bedrock (Claude). Without it, Ask Bedrock answers "isn't configured".
+      # Ask Stabilis (Claude). Without it, Ask Stabilis answers "isn't configured".
       - key: ANTHROPIC_API_KEY
         sync: false
-      # The Claude model Ask Bedrock uses.
+      # The Claude model Ask Stabilis uses.
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5-5
       # Sign in with Apple: identity tokens must be issued to this app.

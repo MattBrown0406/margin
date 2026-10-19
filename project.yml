@@ -25,7 +25,7 @@ targets:
       - target: MarginWidget
     settings:
       base:
-        INFOPLIST_KEY_CFBundleDisplayName: Bedrock
+        INFOPLIST_KEY_CFBundleDisplayName: Stabilis
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
@@ -59,7 +59,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.mattbrown.margin.widget
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: ios/MarginWidget/Info.plist
-        INFOPLIST_KEY_CFBundleDisplayName: Bedrock
+        INFOPLIST_KEY_CFBundleDisplayName: Stabilis
         CODE_SIGN_ENTITLEMENTS: ios/MarginWidget/MarginWidget.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES

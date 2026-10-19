@@ -69,7 +69,7 @@ private struct SignedOutResponse: Decodable { let signedOut: Bool }
         do {
             _ = try await api.request("/v1/account", method: "DELETE", as: DeletedResponse.self)
             clearSession()
-            message = "Your Bedrock account and bank connections were deleted. Your budget stays on your devices."
+            message = "Your Stabilis account and bank connections were deleted. Your budget stays on your devices."
         } catch {
             refresh()   // a 401 clears the session; show the signed-out state rather than a dead Delete button
             message = isSignedIn ? error.localizedDescription : "Your session ended. Sign in again to delete your account."
@@ -114,12 +114,12 @@ struct AccountView: View {
                     SignInWithAppleButton(.signIn) { account.prepare($0) } onCompletion: { result in Task { await account.complete(result) } }
                         .frame(height: 48).disabled(account.isWorking)
                 } else {
-                    Text("Bedrock’s secure service isn’t set up in this build yet, so sign-in is unavailable. Everything else works on your device.").font(.subheadline).foregroundStyle(.secondary)
+                    Text("The Stabilis service isn’t set up in this build yet, so sign-in is unavailable. Everything else works on your device.").font(.subheadline).foregroundStyle(.secondary)
                 }
                 if account.isWorking { ProgressView() }
                 if let message = account.message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
             } header: { Text("Account") } footer: {
-                Text("Signing in unlocks bank connections and Ask Bedrock. Your budget itself stays on your devices and in your iCloud.")
+                Text("Signing in unlocks bank connections and Ask Stabilis. Your budget itself stays on your devices and in your iCloud.")
             }
             if let privacy = MarginService.baseURL?.appending(path: "privacy") {
                 Section { Link(destination: privacy) { Label("Privacy Policy", systemImage: "hand.raised") } }
@@ -129,13 +129,13 @@ struct AccountView: View {
                 Toggle("Sync with iCloud", isOn: $iCloudSync)
                 LabeledContent("Status", value: iCloudStatus)
             } header: { Text("Backup & sync") } footer: {
-                Text("Keeps your budget backed up and in sync across your iPhone and iPad. Changes take effect the next time you open Bedrock.")
+                Text("Keeps your budget backed up and in sync across your iPhone and iPad. Changes take effect the next time you open Stabilis.")
             }
         }
         .navigationTitle("Settings")
         .task { await account.checkAppleCredential() }
-        .confirmationDialog("Delete your Bedrock account?", isPresented: $confirmDelete, titleVisibility: .visible) {
+        .confirmationDialog("Delete your Stabilis account?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete account", role: .destructive) { Task { await account.deleteAccount() } }
-        } message: { Text("This disconnects every bank and deletes what Bedrock’s service stores about you. Your budget on this device isn’t affected.") }
+        } message: { Text("This disconnects every bank and deletes what the Stabilis service stores about you. Your budget on this device isn’t affected.") }
     }
 }

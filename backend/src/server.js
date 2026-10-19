@@ -17,7 +17,7 @@ const server = createApp({ config, store, plaid, apple, appleTokens: appleTokens
 // Render's proxy keeps connections open longer than Node's 5 s default; a shorter server timeout causes stray 502s.
 server.keepAliveTimeout = 120_000;
 server.headersTimeout = 121_000;
-server.listen(config.port, () => console.log(`Bedrock bank service listening on :${config.port} (${config.plaidEnv})`));
+server.listen(config.port, () => console.log(`Stabilis bank service listening on :${config.port} (${config.plaidEnv})`));
 // Apple revocations that failed during account deletion are retried at start and then hourly.
 if (appleTokens.configured) {
   const retry = () => retryPendingAppleRevocations({ store, appleTokens }).catch(error => console.warn(`Pending Apple revocations could not be retried: ${error?.message || 'unknown error'}`));

@@ -32,6 +32,6 @@ enum MarginStore {
             return container
         }
         do { return try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, cloudKitDatabase: .none)]) }
-        catch { fatalError("Could not create Bedrock data store: \(error)") }
+        catch { fatalError("Could not create Stabilis data store: \(error)") }
     }
 }

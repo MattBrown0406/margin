@@ -6,7 +6,7 @@
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
-	<!-- Bank accounts and transactions (via Plaid) and the Sign in with Apple user ID go to Bedrock's own service; Ask Bedrock
+	<!-- Bank accounts and transactions (via Plaid) and the Sign in with Apple user ID go to the Stabilis service; Ask Stabilis
 	     sends budget totals and the purchase description to Anthropic. All only to run the app. -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>

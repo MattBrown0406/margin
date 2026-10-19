@@ -198,7 +198,7 @@ struct TaxSetAsideCard: View {
         let amount = TaxSetAside.amount(gross: job.amount, rate: rate)
         VStack(alignment: .leading, spacing: 10) {
                 Label("\(job.title) paid \(job.amount.money)", systemImage: "percent").font(.headline)
-                Text("Set aside \(amount.money) (\(rate.formatted(.percent.precision(.fractionLength(0))))) for \(String(JobTaxSetAside.year(of: job))) taxes? Move it to your tax savings, and Bedrock counts it in your tax reserve.")
+                Text("Set aside \(amount.money) (\(rate.formatted(.percent.precision(.fractionLength(0))))) for \(String(JobTaxSetAside.year(of: job))) taxes? Move it to your tax savings, and Stabilis counts it in your tax reserve.")
                     .font(.subheadline).foregroundStyle(.secondary)
                 ViewThatFits(in: .horizontal) {
                     HStack { setAsideButtons(job, amount: amount) }
@@ -314,7 +314,7 @@ struct RemindersSection: View {
             Toggle("Net waiting to be assigned", isOn: binding(\.remindNet))
             Toggle("Quarterly tax deadlines", isOn: binding(\.remindTaxes))
             if denied {
-                Text("Notifications are off for Bedrock, so these reminders can’t arrive.").font(.caption).foregroundStyle(Color.marginCoral)
+                Text("Notifications are off for Stabilis, so these reminders can’t arrive.").font(.caption).foregroundStyle(Color.marginCoral)
                 Button("Turn on in Settings") { if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) } }
             }
         } header: { Text("Reminders") } footer: {

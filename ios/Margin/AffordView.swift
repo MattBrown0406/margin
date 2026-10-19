@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// The budget summary sent to Ask Bedrock: totals and category names only, never transactions or merchants.
+/// The budget summary sent to Ask Stabilis: totals and category names only, never transactions or merchants.
 struct AskContext: Encodable {
     struct Category: Encodable { let name: String; let planned: Double; let spentThisMonth: Double }
     struct Bill: Encodable { let name: String; let amount: Double; let dueDay: Int }
@@ -40,8 +40,8 @@ struct AffordView: View {
     @State private var askError: String?
     @Query private var allocations: [NetAllocation]
     @Query private var settingsList: [FinanceSettings]
-    /// Ask Bedrock sends budget details to an outside AI provider, so the first use asks permission.
-    @AppStorage("askBedrockConsent") private var askConsent = false
+    /// Ask Stabilis sends budget details to an outside AI provider, so the first use asks permission.
+    @AppStorage("askAssistantConsent") private var askConsent = false
     @State private var confirmingAsk = false
 
     private var now: Date { .now }
@@ -69,17 +69,17 @@ struct AffordView: View {
             Section {
                 Label(verdict.headline, systemImage: icon(verdict.level)).font(.headline).foregroundStyle(color(verdict.level))
                 ForEach(verdict.details, id: \.self) { Text($0).font(.subheadline) }
-            } header: { Text("Bedrock’s answer") } footer: { Text("Based on your flexible budget and the jobs you’ve booked. Your Peace Number is never counted as spendable.") }
+            } header: { Text("Stabilis says") } footer: { Text("Based on your flexible budget and the jobs you’ve booked. Your Peace Number is never counted as spendable.") }
             Section {
                 if let answer { Text(answer).font(.subheadline) }
                 if let askError { Text(askError).font(.subheadline).foregroundStyle(.red) }
                 if MarginAPI.signedIn() != nil {
-                    Button { if askConsent { Task { await ask(verdict) } } else { confirmingAsk = true } } label: { Label(answer == nil ? "Ask Bedrock for a plan" : "Ask again", systemImage: "sparkles") }.disabled(asking)
+                    Button { if askConsent { Task { await ask(verdict) } } else { confirmingAsk = true } } label: { Label(answer == nil ? "Ask Stabilis for a plan" : "Ask again", systemImage: "sparkles") }.disabled(asking)
                     if asking { ProgressView() }
                 } else {
                     NavigationLink("Sign in to get a personal plan") { AccountView() }
                 }
-            } header: { Text("Ask Bedrock") } footer: { Text("Sends a summary of your budget totals and this purchase, never your transactions, to Claude, an AI model by Anthropic, to write the plan.") }
+            } header: { Text("Ask Stabilis") } footer: { Text("Sends a summary of your budget totals and this purchase, never your transactions, to Claude, an AI model by Anthropic, to write the plan.") }
         }
     }.numberPadDone().navigationTitle("Can I afford it?")
      // On the Form, not a Section: a presentation attached inside a Form section never shows.
@@ -87,7 +87,7 @@ struct AffordView: View {
          Button("Share and ask") { askConsent = true; if let verdict { Task { await ask(verdict) } } }
          Button("Cancel", role: .cancel) {}
      } message: {
-         Text("To answer, Bedrock sends your budget totals, bills, forecast and this purchase to Claude, an AI model made by Anthropic. Your transactions and bank details are never sent.")
+         Text("To answer, Stabilis sends your budget totals, bills, forecast and this purchase to Claude, an AI model made by Anthropic. Your transactions and bank details are never sent.")
      }
      .onChange(of: amount) { answer = nil; askError = nil }.onChange(of: monthOffset) { answer = nil; askError = nil }.onChange(of: what) { answer = nil; askError = nil }
      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } } } }

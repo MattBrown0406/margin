@@ -500,7 +500,7 @@
 				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
+				INFOPLIST_KEY_CFBundleDisplayName = Stabilis;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -527,7 +527,7 @@
 				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
+				INFOPLIST_KEY_CFBundleDisplayName = Stabilis;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -553,7 +553,7 @@
 				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
+				INFOPLIST_KEY_CFBundleDisplayName = Stabilis;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -575,7 +575,7 @@
 				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
+				INFOPLIST_KEY_CFBundleDisplayName = Stabilis;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

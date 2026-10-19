@@ -80,7 +80,7 @@ struct MarginAPI {
         request.timeoutInterval = timeout
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw MarginAPIError(message: "No response from Bedrock’s service") }
+        guard let http = response as? HTTPURLResponse else { throw MarginAPIError(message: "No response from the Stabilis service") }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 401, let sessionToken {
                 // Only forget the session this request used: a newer sign-in may have replaced it meanwhile.
@@ -89,7 +89,7 @@ struct MarginAPI {
                 throw MarginAPIError(message: "Your session ended. Sign in again in Settings.", status: 401)
             }
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw MarginAPIError(message: message ?? "Bedrock’s service returned \(http.statusCode)", status: http.statusCode)
+            throw MarginAPIError(message: message ?? "The Stabilis service returned \(http.statusCode)", status: http.statusCode)
         }
         return try decoder.decode(T.self, from: data)
     }

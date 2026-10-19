@@ -133,7 +133,7 @@ struct BankAccountsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Bank accounts").font(.largeTitle.bold())
-                Text("Read-only connections. Bedrock never receives your bank password and cannot move money.").foregroundStyle(.secondary)
+                Text("Read-only connections. Stabilis never receives your bank password and cannot move money.").foregroundStyle(.secondary)
                 if MarginService.baseURL == nil {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Secure service setup needed", systemImage: "lock.shield.fill").font(.headline)
@@ -143,7 +143,7 @@ struct BankAccountsView: View {
                     NavigationLink { AccountView() } label: {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("Sign in to connect a bank", systemImage: "person.crop.circle.badge.plus").font(.headline)
-                            Text("Sign in with Apple in Settings. Your budget stays on your devices; only bank connections use Bedrock’s service.").font(.subheadline).foregroundStyle(.secondary)
+                            Text("Sign in with Apple in Settings. Your budget stays on your devices; only bank connections use the Stabilis service.").font(.subheadline).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading).marginCard()
                     }.buttonStyle(.plain)
                 }
@@ -230,7 +230,7 @@ struct BankAccountsView: View {
         #endif
         .confirmationDialog("Disconnect \(pendingDisconnect?.institutionName ?? "bank")?", isPresented: Binding(get: { pendingDisconnect != nil }, set: { if !$0 { pendingDisconnect = nil } }), titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { if let connection = pendingDisconnect { Task { await model.disconnect(connection) } } }
-        } message: { Text("Bedrock stops syncing this bank. Transactions you already imported stay in your ledger.") }
+        } message: { Text("Stabilis stops syncing this bank. Transactions you already imported stay in your ledger.") }
     }
 
     private func categoryOptions(for scope: String) -> [String] {

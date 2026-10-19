@@ -20,10 +20,10 @@ enum WidgetBridge {
     }
 }
 
-/// "Log $12 coffee in Bedrock": records a personal expense without opening the app.
+/// "Log $12 coffee in Stabilis": records a personal expense without opening the app.
 struct LogExpenseIntent: AppIntent {
     static let title: LocalizedStringResource = "Log an Expense"
-    static let description = IntentDescription("Records an expense in Bedrock and tells you what’s left to spend today.")
+    static let description = IntentDescription("Records an expense in Stabilis and tells you what’s left to spend today.")
     /// Writes to the ledger (and iCloud), so it never runs from a locked phone.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
@@ -63,7 +63,7 @@ struct LogExpenseIntent: AppIntent {
     }
 }
 
-/// "What can I spend today in Bedrock?"
+/// "What can I spend today in Stabilis?"
 struct SafeToSpendIntent: AppIntent {
     static let title: LocalizedStringResource = "Safe to Spend Today"
     static let description = IntentDescription("Tells you how much you can safely spend today.")

@@ -1,6 +1,6 @@
-# Bedrock
+# Stabilis
 
-Bedrock was called Margin during development: the Xcode project, targets, bundle ID (`com.mattbrown.margin`), iCloud container and App Group keep that name on purpose (changing them would orphan existing data). Everything a user sees says Bedrock.
+Stabilis was called Margin during development (and briefly Bedrock): the Xcode project, targets, bundle ID (`com.mattbrown.margin`), iCloud container and App Group keep that name on purpose (changing them would orphan existing data). Everything a user sees says Stabilis.
 
 A private, local-first daily budgeting app designed to reduce unnecessary spending without shame.
 
@@ -25,7 +25,7 @@ Margin answers one useful daily question: **What can I safely spend today and st
 - Booked-job pipeline and a six-month cash-flow forecast ("December is $2,100 short unless more work books")
 - Profit per job: tag business expenses to the job they served; per-job margin, and a year-to-date Schedule C summary in Reports and the Excel export
 - Home-screen and lock-screen Safe to Spend widget, plus Siri/Shortcuts: "Log an expense in Margin", "What can I spend today in Margin"
-- "Can I afford it?": an on-device verdict for this month or a future month, with an optional plain-English plan from Ask Bedrock (Claude) that only ever sees budget totals
+- "Can I afford it?": an on-device verdict for this month or a future month, with an optional plain-English plan from Ask Stabilis (Claude) that only ever sees budget totals
 - Money tools (Today › Money tools):
   - **Steady paycheck**: turns job-based income into one monthly paycheck from an income buffer (suggested from the last 12 months of Net), with buffer runway and a month-by-month projection from booked work
   - **Taxes**: quarterly estimated taxes from the business ledger (2026 federal brackets and standard deduction, self-employment tax, optional simplified QBI, flat state rate, prior-year safe harbor), the share of each job's Gross to set aside, the due-date schedule, payments, and a tax reserve
@@ -55,7 +55,7 @@ The branded package includes a generated `Margin.xcodeproj`, so on Matt's MacBoo
 /Users/mattbrown/Documents/MarginBudget/Margin.xcodeproj
 ```
 
-The Bedrock icon (polished charcoal granite with a gold vein) is installed as the native `AppIcon` and appears in the Today header. It is rendered procedurally, so it can be rebuilt exactly: `design/icon-render/make-icon.sh` regenerates `design/Bedrock-App-Icon-1024.png`, the App Store icon and the in-app logo sizes.
+The Stabilis icon (polished charcoal granite with a gold vein) is installed as the native `AppIcon` and appears in the Today header. It is rendered procedurally, so it can be rebuilt exactly: `design/icon-render/make-icon.sh` regenerates `design/Stabilis-App-Icon-1024.png`, the App Store icon and the in-app logo sizes.
 
 If `project.yml` is changed later, regenerate the project with [XcodeGen](https://github.com/yonaskolb/XcodeGen):
 
@@ -76,7 +76,7 @@ The app now uses capabilities that need a paid Apple Developer team. In Xcode, s
 |---|---|---|
 | iCloud › CloudKit | `iCloud.com.mattbrown.margin` | Backup and sync |
 | App Groups (app and widget) | `group.com.mattbrown.margin` | Sharing today's numbers with the widget |
-| Sign in with Apple | — | Signing in to the bank service and Ask Bedrock |
+| Sign in with Apple | — | Signing in to the bank service and Ask Stabilis |
 | Background Modes › Remote notifications | — | CloudKit sync pushes |
 
 Before a TestFlight or App Store build, open the CloudKit Console and **deploy the schema from Development to Production**; otherwise production sync fails silently. New record types (FinanceSettings, Debt, Asset, NetWorthSnapshot, NetAllocation, EstimatedTaxPayment, MerchantRule) and new fields (FinanceSettings reminders and `taxSetAsideSince`, Transaction `externalName`) need this deploy too. Run the app once in Development after any model change so the schema is up to date.

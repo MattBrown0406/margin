@@ -181,13 +181,13 @@ test('deleting an account with no data succeeds and requires auth', async () => 
   } finally { await f.close(); }
 });
 
-// ---- Ask Bedrock ----
+// ---- Ask Stabilis ----
 
 const snapshot = { verdict: 'fitsNextMonth', price: 480, peaceNumber: 3000, flexible: [{ name: 'Dining', remaining: 120 }] };
 
 test('/v1/ask returns 503 without an assistant and validates input', async () => {
   let f = await fixture();
-  try { const r = await f.post('/v1/ask', { question: 'Can I afford it?', context: snapshot }); assert.equal(r.status, 503); assert.equal(r.data.error, "Ask Bedrock isn't configured"); } finally { await f.close(); }
+  try { const r = await f.post('/v1/ask', { question: 'Can I afford it?', context: snapshot }); assert.equal(r.status, 503); assert.equal(r.data.error, "Ask Stabilis isn't configured"); } finally { await f.close(); }
   const assistant = { calls: 0, async answer() { this.calls++; return 'ok'; } };
   f = await fixture({ assistant });
   try {
@@ -201,7 +201,7 @@ test('/v1/ask returns 503 without an assistant and validates input', async () =>
 test('/v1/ask answers with the assistant and surfaces refusals as 422', async () => {
   const seen = [];
   let refuse = false;
-  const assistant = { async answer(input) { seen.push(input); if (refuse) throw Object.assign(new Error("Bedrock can't help with that question."), { status: 422 }); return 'It fits next month if Dining drops by $40.'; } };
+  const assistant = { async answer(input) { seen.push(input); if (refuse) throw Object.assign(new Error("Stabilis can't help with that question."), { status: 422 }); return 'It fits next month if Dining drops by $40.'; } };
   const f = await fixture({ assistant });
   try {
     const { status, data } = await f.post('/v1/ask', { question: '  Can I buy the camera?  ', context: snapshot });
@@ -209,7 +209,7 @@ test('/v1/ask answers with the assistant and surfaces refusals as 422', async ()
     assert.deepEqual(seen[0], { question: 'Can I buy the camera?', context: snapshot });
     refuse = true;
     const refused = await f.post('/v1/ask', { question: 'Something off-limits', context: snapshot });
-    assert.equal(refused.status, 422); assert.equal(refused.data.error, "Bedrock can't help with that question.");
+    assert.equal(refused.status, 422); assert.equal(refused.data.error, "Stabilis can't help with that question.");
   } finally { await f.close(); }
 });
 
@@ -228,7 +228,7 @@ test('/v1/ask allows 30 questions per rolling day per user', async () => {
 });
 
 test('readAnswer checks refusal before content and joins only text blocks', () => {
-  assert.throws(() => readAnswer({ stop_reason: 'refusal', content: [{ type: 'text', text: 'partial' }] }), { status: 422, message: "Bedrock can't help with that question." });
+  assert.throws(() => readAnswer({ stop_reason: 'refusal', content: [{ type: 'text', text: 'partial' }] }), { status: 422, message: "Stabilis can't help with that question." });
   assert.equal(readAnswer({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'fallback', from: {}, to: {} }, { type: 'text', text: 'Yes, ' }, { type: 'text', text: 'next month.' }] }), 'Yes, next month.');
   assert.throws(() => readAnswer({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }] }), { status: 502 });
   assert.throws(() => readAnswer({ stop_reason: 'end_turn', content: [{ type: 'text', text: '  ' }] }), { status: 502 });

@@ -1,4 +1,4 @@
-"""Bedrock app icon source: polished charcoal granite with a gold vein, rendered procedurally (numpy + Pillow).
+"""Stabilis app icon source: polished charcoal granite with a gold vein, rendered procedurally (numpy + Pillow).
 Writes face.png (the polished surface, square) and edge.png (a slab front edge, unused by the icon).
 Usage: python slab.py OUTDIR 3   — then see make-icon.sh. Seed 3 is the shipped icon."""
 import sys
