@@ -1,12 +1,13 @@
-"""Stabilis app icon source: polished charcoal granite with a gold vein, rendered procedurally (numpy + Pillow).
+"""Polished charcoal granite (optionally with a gold vein), rendered procedurally (numpy + Pillow).
 Writes face.png (the polished surface, square) and edge.png (a slab front edge, unused by the icon).
-Usage: python slab.py OUTDIR 3   — then see make-icon.sh. Seed 3 is the shipped icon."""
+Usage: python slab.py OUTDIR 3 [plain]  — see make-icon.sh. Seed 3, plain, is the coin icon's background."""
 import sys
 import numpy as np
 from PIL import Image
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "."
 SEED = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+PLAIN = len(sys.argv) > 3 and sys.argv[3] == "plain"   # granite without the vein (background for the coin icon)
 N = 1600
 
 
@@ -84,7 +85,7 @@ def wander(ax_, ay_, bx, by, n=14, amp=0.010):
 
 b1, _ = vein_field(x, y, wander(pts_x[2], pts_y[2], -0.05, 0.42), 0.0055, rng_seed + 1, N, N)
 b2, _ = vein_field(x, y, wander(pts_x[4], pts_y[4], 1.05, 0.58), 0.0045, rng_seed + 2, N, N)
-vein = np.clip(main + b1 * 0.9 + b2 * 0.85, 0, 1)
+vein = np.zeros_like(main) if PLAIN else np.clip(main + b1 * 0.9 + b2 * 0.85, 0, 1)
 
 # Gold: polished metal. Brightness varies with flakes and a soft directional streak, like light moving across it.
 flakes = fbm(60, 3, N, N, rng_seed + 30)

@@ -55,7 +55,7 @@ The branded package includes a generated `Margin.xcodeproj`, so on Matt's MacBoo
 /Users/mattbrown/Documents/MarginBudget/Margin.xcodeproj
 ```
 
-The Stabilis icon (polished charcoal granite with a gold vein) is installed as the native `AppIcon` and appears in the Today header. It is rendered procedurally, so it can be rebuilt exactly: `design/icon-render/make-icon.sh` regenerates `design/Stabilis-App-Icon-1024.png`, the App Store icon and the in-app logo sizes.
+The Stabilis icon (a Roman gold coin — laurel wreath and an inscriptional S — on polished charcoal granite) is installed as the native `AppIcon` and appears in the Today header. It is rendered procedurally, so it can be rebuilt exactly: `design/icon-render/make-icon.sh` regenerates `design/Stabilis-App-Icon-1024.png`, the App Store icon and the in-app logo sizes.
 
 If `project.yml` is changed later, regenerate the project with [XcodeGen](https://github.com/yonaskolb/XcodeGen):
 
