@@ -499,7 +499,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARGIN_API_BASE_URL = "https://api.example.com";
+				MARGIN_API_BASE_URL = "https://margin-bank.onrender.com";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -521,7 +521,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARGIN_API_BASE_URL = "https://api.example.com";
+				MARGIN_API_BASE_URL = "https://margin-bank.onrender.com";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

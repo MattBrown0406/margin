@@ -31,7 +31,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_FILE: ios/Margin/Info.plist
         # Read by the app via Info.plist; replace with the HTTPS bank-service URL.
-        MARGIN_API_BASE_URL: "https://api.example.com"
+        MARGIN_API_BASE_URL: "https://margin-bank.onrender.com"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # iCloud (CloudKit), Sign in with Apple, and the App Group shared with the widget.
         CODE_SIGN_ENTITLEMENTS: ios/Margin/Margin.entitlements
