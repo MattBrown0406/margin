@@ -97,27 +97,35 @@ struct RootView: View {
             }
             let grossJobs = Set(transactions.filter(isGross).compactMap(\.jobID))
             for group in duplicateGroups {
-                // The survivor depends only on the copies themselves (lowest id), never on what else has synced yet, so
-                // every device keeps the same copy even mid-sync; links on the removed copy are moved onto it below.
-                let sorted = group.sorted { $0.id.uuidString < $1.id.uuidString }
+                // The survivor depends only on the copies themselves, never on what else has synced yet, so every
+                // device keeps the same copy even mid-sync: a Gross over any other kind (one device may have filed the
+                // deposit as personal), then the lowest id. Links on the removed copy are moved onto it below.
+                let sorted = group.sorted { (isGross($0) ? 0 : 1, $0.id.uuidString) < (isGross($1) ? 0 : 1, $1.id.uuidString) }
                 let survivor = sorted[0]
                 for loser in sorted.dropFirst() {
+                    // A standalone Net's own id is referenced only by bookings; a job id has other entries pointing at it.
+                    func isStandaloneID(_ id: UUID) -> Bool { !grossJobs.contains(id) && !transactions.contains { $0.jobID == id && $0.id != loser.id && $0.id != survivor.id } }
                     if isGross(loser), isGross(survivor), let lost = loser.jobID, let kept = survivor.jobID, lost != kept {
                         // A Gross's jobID is the job itself, so two copies of one Gross are one job: whatever points
                         // at the removed copy's job moves to the survivor's.
                         for tx in transactions where tx.jobID == lost && tx.id != loser.id { tx.jobID = kept }
                         for allocation in allocations where allocation.target == lost.uuidString { allocation.target = kept.uuidString }
                         repointBookings(from: lost, to: kept)
-                    } else if !isGross(loser), !isGross(survivor) {
+                    } else if isGross(survivor), let lost = loser.jobID, let kept = survivor.jobID, lost != kept, isStandaloneID(lost) {
+                        // The other device filed the deposit as a Net: its "paid by this" / "not this one" marks move to the job.
+                        repointBookings(from: lost, to: kept)
+                    } else if !isGross(loser), !isGross(survivor), loser.isIncome == survivor.isIncome, loser.incomeKind == survivor.incomeKind {
                         // A Net's or expense's jobID points at a Gross's job (never merged: that would fuse two jobs),
                         // or, for a Net with no Gross, is its own id that bookings may reference.
                         let loserLinked = loser.jobID.map(grossJobs.contains) ?? false
                         let survivorLinked = survivor.jobID.map(grossJobs.contains) ?? false
-                        let survivorClaimed = survivor.jobID.map { id in bookedJobs.contains { $0.paidJobID == id || $0.ignoredPaymentIDs.contains(id) } } ?? false
-                        if loserLinked, !survivorLinked, !survivorClaimed {
-                            survivor.jobID = loser.jobID          // keep the link the person made on the other device
-                        } else if !loserLinked, !survivorLinked, let lost = loser.jobID, let kept = survivor.jobID, lost != kept {
-                            repointBookings(from: lost, to: kept) // a standalone Net: keep "paid by this" / "not this one"
+                        if loserLinked, !survivorLinked, let job = loser.jobID {
+                            // Keep the link the person made on the other device; bookings that pointed at this Net now
+                            // point at the job it belongs to.
+                            if let old = survivor.jobID { repointBookings(from: old, to: job) }
+                            survivor.jobID = job
+                        } else if !loserLinked, !survivorLinked, let lost = loser.jobID, let kept = survivor.jobID, lost != kept, isStandaloneID(lost) {
+                            repointBookings(from: lost, to: kept)
                         }
                     }
                     context.delete(loser); changed = true

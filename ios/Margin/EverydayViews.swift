@@ -44,7 +44,11 @@ struct TransactionEditView: View {
     }
     private var canSave: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value != nil && (tx.isIncome || categoryOptions.contains(category)) }
 
-    var body: some View { NavigationStack { Form {
+    var body: some View {
+        // iCloud de-duplication can remove this copy while the sheet is open; reading it then could crash.
+        if tx.modelContext == nil || tx.isDeleted { Color.clear.onAppear { dismiss() } } else { form }
+    }
+    private var form: some View { NavigationStack { Form {
         Section {
             TextField("Description", text: $title)
             LabeledContent("Amount") { TextField("0", text: $amount).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
