@@ -5,17 +5,35 @@ import SwiftData
 struct MoneyFacts {
     let entries: [LedgerEntry]
     let lines: [PlanLine]
+    /// The whole monthly plan.
     let planned: Double
+    /// What a typical month's plan needs from Net: for someone who sets tax aside from Gross, the tax line is
+    /// funded that way instead.
+    let plannedFromNet: Double
     let forecast: [ForecastMonth]
     /// The earliest booked job still expected to pay after `now`.
     let nextIncome: Date?
 
-    init(transactions: [Transaction], categories: [BudgetCategory], bookedJobs: [BookedJob], now: Date = .now, months: Int = 6) {
+    init(transactions: [Transaction], categories: [BudgetCategory], bookedJobs: [BookedJob], allocations: [NetAllocation], settings: FinanceSettings?,
+         now: Date = .now, months: Int = 6) {
+        let calendar = Calendar.current
         entries = transactions.map(\.ledgerEntry)
         lines = categories.map(\.planLine)
         planned = categories.reduce(0) { $0 + $1.monthlyLimit }
+        let taxLineName = settings?.taxLineName ?? "Tax reserve"
+        let taxLine = categories.filter { $0.name == taxLineName }.reduce(0) { $0 + $1.monthlyLimit }
+        let setAsides = allocations.filter { $0.kind == AllocationKinds.grossTax && $0.amount > 0 }
+        // Counted the way Assign Net counts them: once, in the later of the job's month and the month it was made.
+        let byMonth = Dictionary(setAsides.map { (max($0.monthKey, calendar.monthKey(for: $0.date)), $0.amount) }, uniquingKeysWith: +)
+        // Bookings are expected to have tax set aside too only for someone who has done so in the last year.
+        let yearAgo = calendar.date(byAdding: .year, value: -1, to: now) ?? now
+        let setsAside = setAsides.contains { $0.date >= yearAgo }
+        let rate = setsAside ? JobTaxSetAside.rate(transactions: transactions, settings: settings, year: calendar.component(.year, from: now), now: now) : 0
+        plannedFromNet = setsAside ? max(0, planned - taxLine) : planned
         let expected = BookedJob.expectedIncome(bookedJobs, entries: entries)
-        forecast = CashFlowForecast.months(entries: entries, booked: expected, plannedMonthly: planned, now: now, count: months)
+        forecast = CashFlowForecast.months(entries: entries, booked: expected, plannedMonthly: planned, now: now, count: months,
+                                           carriedIn: NetAssignment.carriedIn(transactions: transactions, allocations: allocations, now: now),
+                                           taxLine: taxLine, setAsideByMonth: byMonth, setAsideRate: rate)
         nextIncome = expected.map(\.expectedDate).filter { $0 > now }.min()
     }
 }
@@ -193,7 +211,7 @@ struct AssignNetView: View {
         let spent = Dictionary(transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }
             .map { ($0.category, $0.amount) }, uniquingKeysWith: +)
         let targets = NetAllocator.targets(lines: categories.map(\.planLine), taxLineName: settings?.taxLineName ?? "Tax reserve", assigned: assigned, spent: spent)
-        let facts = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs)
+        let facts = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: settings)
         let surplus = settings.map(\.surplusTarget).flatMap { surplusOptions.contains($0) ? $0 : nil }
         return NetAllocator.suggest(amount: left, targets: targets, now: .now, nextIncome: facts.nextIncome, surplusTarget: surplus)
     }
@@ -301,10 +319,11 @@ struct SteadyPaycheckView: View {
     @Query private var categories: [BudgetCategory]
     @Query private var bookedJobs: [BookedJob]
     @Query private var settingsList: [FinanceSettings]
+    @Query private var allocations: [NetAllocation]
 
     var body: some View {
         Form {
-            if let settings = FinanceSettings.pick(settingsList) { SteadyPaycheckForm(settings: settings, facts: MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs)) }
+            if let settings = FinanceSettings.pick(settingsList) { SteadyPaycheckForm(settings: settings, facts: MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: settings)) }
         }
         .numberPadDone().navigationTitle("Steady paycheck")
         .task { _ = FinanceSettings.current(in: context) }
@@ -317,7 +336,7 @@ private struct SteadyPaycheckForm: View {
     let facts: MoneyFacts
 
     var body: some View {
-        let plan = SteadyPaycheck.plan(entries: facts.entries, chosenPaycheck: settings.monthlyPaycheck, buffer: settings.incomeBuffer, plannedMonthly: facts.planned, forecast: facts.forecast, now: .now)
+        let plan = SteadyPaycheck.plan(entries: facts.entries, chosenPaycheck: settings.monthlyPaycheck, buffer: settings.incomeBuffer, plannedMonthly: facts.plannedFromNet, forecast: facts.forecast, now: .now)
         Section {
             VStack(alignment: .leading, spacing: 6) {
                 Text("YOUR MONTHLY PAYCHECK").font(.caption.bold()).foregroundStyle(.secondary)

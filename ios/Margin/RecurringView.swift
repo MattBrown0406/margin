@@ -5,6 +5,7 @@ import SwiftData
 struct RecurringChargesSection: View {
     @Environment(\.modelContext) private var context
     @Query private var settingsList: [FinanceSettings]
+    @Query private var allocations: [NetAllocation]
     let transactions: [Transaction]; let categories: [BudgetCategory]; let bookedJobs: [BookedJob]
 
     private var settings: FinanceSettings? { FinanceSettings.pick(settingsList) }
@@ -13,7 +14,7 @@ struct RecurringChargesSection: View {
     }
 
     var body: some View {
-        let recurring = recurring, facts = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs)
+        let recurring = recurring, facts = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: settings)
         let until = facts.nextIncome ?? Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
         let month = transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }
         let taxLine = settings?.taxLineName ?? "Tax reserve"

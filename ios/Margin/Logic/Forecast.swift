@@ -11,6 +11,8 @@ struct BookedJobInfo: Equatable, Identifiable {
     var ignoredPaymentIDs: Set<UUID> = []
     /// When the booking was made; payments recorded well before that can't be its payment.
     var bookedAt: Date = .distantPast
+    /// The job has paid its Gross and only Net transfers are still expected (its tax set-aside is already decided).
+    var grossReceived = false
 }
 
 /// One month of the cash-flow calendar: personal Net already received plus Net expected from booked
@@ -26,8 +28,10 @@ struct ForecastMonth: Equatable, Identifiable {
     var overdueJobs: [BookedJobInfo]
     /// Running total of `gap` from the current month through this one.
     var cumulative: Double
+    /// Late-last-month Net not assigned there, which funds this month (current month only).
+    var carriedIn: Double = 0
 
-    var gap: Double { receivedNet + expectedNet - planned }
+    var gap: Double { carriedIn + receivedNet + expectedNet - planned }
     var isShort: Bool { gap < -0.005 }
     /// Short once earlier months' surplus (money already in the personal account) is counted.
     var isRunningShort: Bool { cumulative < -0.005 }
@@ -37,7 +41,14 @@ enum CashFlowForecast {
     /// An unpaid booking keeps counting (in the current month) for this long after its expected date.
     static let overdueGraceDays = 60
 
-    static func months(entries: [LedgerEntry], booked: [BookedJobInfo], plannedMonthly: Double, now: Date, count: Int = 6, calendar: Calendar = .current) -> [ForecastMonth] {
+    /// - Parameters:
+    ///   - carriedIn: Net from the last days of last month still unassigned; it funds the current month.
+    ///   - taxCover: the part of the plan's tax line funded by tax set aside from Gross rather than by Net. A month's
+    ///     plan needs that much less Net: the recorded set-asides counted in it (`setAsideByMonth`, by month key) plus
+    ///     `setAsideRate` of the Gross still expected from its bookings, capped at `taxLine`.
+    static func months(entries: [LedgerEntry], booked: [BookedJobInfo], plannedMonthly: Double, now: Date, count: Int = 6,
+                       carriedIn: Double = 0, taxLine: Double = 0, setAsideByMonth: [String: Double] = [:], setAsideRate: Double = 0,
+                       calendar: Calendar = .current) -> [ForecastMonth] {
         let current = calendar.startOfMonth(for: now)
         var running = 0.0
         return (0..<max(1, count)).map { offset in
@@ -47,8 +58,11 @@ enum CashFlowForecast {
             let overdue = offset == 0 ? booked.filter { $0.expectedDate < current && $0.expectedDate >= graceStart } : []
             let jobs = (overdue + inMonth).sorted { $0.expectedDate < $1.expectedDate }
             let received = entries.filter { $0.isNet && calendar.isSameMonth($0.date, start) }.total
+            let expectedSetAside = jobs.filter { !$0.grossReceived }.reduce(0) { $0 + max(0, $1.expectedGross) } * min(max(setAsideRate, 0), 1)
+            let cover = min(max(0, taxLine), (setAsideByMonth[calendar.monthKey(for: start)] ?? 0) + expectedSetAside)
             let month = ForecastMonth(monthStart: start, receivedNet: received, expectedNet: jobs.reduce(0) { $0 + $1.expectedNet },
-                                      planned: plannedMonthly, jobs: jobs, overdueJobs: overdue, cumulative: 0)
+                                      planned: max(0, plannedMonthly - cover), jobs: jobs, overdueJobs: overdue, cumulative: 0,
+                                      carriedIn: offset == 0 ? max(0, carriedIn) : 0)
             running += month.gap
             var result = month; result.cumulative = running
             return result
@@ -130,7 +144,7 @@ enum CashFlowForecast {
             guard remaining > 0.005, booking.expectedNet - remaining < booking.expectedNet * transferDoneShare else { return nil }
             // The rest is expected from when the money actually arrived, so a job that paid late isn't dropped by the
             // overdue grace that only applies to bookings still waiting to pay.
-            var result = booking; result.expectedNet = remaining
+            var result = booking; result.expectedNet = remaining; result.grossReceived = true
             result.expectedDate = max(booking.expectedDate, calendar.startOfDay(for: receipt.date))
             return result
         }

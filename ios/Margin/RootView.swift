@@ -117,13 +117,14 @@ struct TodayView: View {
     let transactions: [Transaction]; let categories: [BudgetCategory]; let goals: [SavingsGoal]; let bookedJobs: [BookedJob]
     @State private var showAfford = false
     @State private var editingTx: Transaction?
+    @Query private var allocations: [NetAllocation]
+    @Query private var settingsList: [FinanceSettings]
     private var personalExpenses: [Transaction] { transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var monthExpenses: Double { personalExpenses.reduce(0) { $0 + $1.amount } }
     private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: .now) }
     private var shortfall: ForecastMonth? {
-        let entries = transactions.map(\.ledgerEntry)
-        return CashFlowForecast.firstShortfall(CashFlowForecast.months(entries: entries, booked: BookedJob.expectedIncome(bookedJobs, entries: entries),
-                                                                       plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: .now, count: 3))
+        CashFlowForecast.firstShortfall(MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
+                                                   settings: FinanceSettings.pick(settingsList), months: 3).forecast)
     }
     private var greeting: String {
         switch Calendar.current.component(.hour, from: .now) { case 5..<12: "Good morning"; case 12..<17: "Good afternoon"; default: "Good evening" }
@@ -212,10 +213,18 @@ struct PlanView: View {
     let categories: [BudgetCategory]
     let bookedJobs: [BookedJob]
     @Query private var financeSettings: [FinanceSettings]
+    @Query private var allocations: [NetAllocation]
     @State private var section = 0
     private var netIncome: Double { month.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" }.reduce(0) { $0 + $1.amount } }
     private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var planned: Double { categories.reduce(0) { $0 + $1.monthlyLimit } }
+    /// This month's Net (plus late Net carried in from last month) against what the plan needs from Net: tax set
+    /// aside from Gross already funds that much of the tax line.
+    private var left: Double {
+        let month = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
+                               settings: FinanceSettings.pick(financeSettings), months: 1).forecast.first
+        return netIncome + (month?.carriedIn ?? 0) - (month?.planned ?? planned)
+    }
     private var groupNames: [String] { Array(Set(categories.map(\.groupName))).sorted() }
 
     var body: some View {
@@ -244,7 +253,7 @@ struct PlanView: View {
             HStack(spacing: 10) {
                 PlanSummary(label: "NET INCOME", value: netIncome, dark: true)
                 PlanSummary(label: "PLANNED", value: planned, dark: false)
-                PlanSummary(label: "LEFT", value: netIncome - planned, dark: false)
+                PlanSummary(label: "LEFT", value: left, dark: false)
             }
             ForEach(groupNames, id: \.self) { group in
                 VStack(alignment: .leading, spacing: 9) {

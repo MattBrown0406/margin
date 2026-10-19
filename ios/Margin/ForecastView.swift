@@ -8,6 +8,8 @@ struct ForecastView: View {
     let categories: [BudgetCategory]
     let bookedJobs: [BookedJob]
     @State private var booking = false
+    @Query private var allocations: [NetAllocation]
+    @Query private var settingsList: [FinanceSettings]
     @State private var payingJob: BookedJob?
 
     private var openJobs: [BookedJob] { bookedJobs.filter(\.isOpen).sorted { $0.expectedDate < $1.expectedDate } }
@@ -19,8 +21,7 @@ struct ForecastView: View {
         CashFlowForecast.likelyPayments(for: openJobs.map(\.info), entries: entries, claimed: Set(bookedJobs.compactMap(\.paidJobID)))
     }
     private var months: [ForecastMonth] {
-        CashFlowForecast.months(entries: entries, booked: BookedJob.expectedIncome(bookedJobs, entries: entries),
-                                plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: .now)
+        MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: FinanceSettings.pick(settingsList)).forecast
     }
 
     /// Paid jobs whose Net transfers so far fall short, with what's still expected — shown so it's never invisible.

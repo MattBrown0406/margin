@@ -281,7 +281,10 @@ struct BankAccountsView: View {
     private func importTransaction(_ imported: ImportedBankTransaction) {
         guard !imported.pending, !existing.contains(where: { $0.externalID == imported.id }) else { return }
         let creditKind = imported.amount < 0 ? reviewIncomeKind(imported) : nil
-        let date = ISO8601DateFormatter.marginDate.date(from: imported.date) ?? .now
+        // Noon, not midnight: a bank day stays the same calendar day (and month, and tax year) when the phone or another
+        // iCloud device is in a time zone up to 11 hours away.
+        let day = ISO8601DateFormatter.marginDate.date(from: imported.date) ?? .now
+        let date = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
         let tx: Transaction
         if let kind = creditKind, kind != "refund" {
             let jobID = kind == "net" ? (netJob(for: imported) ?? UUID()) : UUID()

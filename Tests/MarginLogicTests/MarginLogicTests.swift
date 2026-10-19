@@ -91,6 +91,31 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
         #expect(CashFlowForecast.firstShortfall(months)?.monthStart == day(2026, 12, 1, 0))
     }
 
+    @Test func lateNetCarriedInFundsTheCurrentMonthOnly() {
+        // $8,000 landed Sep 28 for an $8,000 plan; it's Oct 4 and nothing else is booked.
+        let months = CashFlowForecast.months(entries: [net(8000, day(2026, 9, 28))], booked: [], plannedMonthly: 8000, now: now, count: 2, carriedIn: 8000, calendar: calendar)
+        #expect(months[0].gap == 0)
+        #expect(!months[0].isRunningShort)
+        #expect(months[1].carriedIn == 0)
+        #expect(months[1].cumulative == -8000)
+    }
+
+    @Test func taxSetAsideFromGrossFundsTheTaxLineWithoutNet() {
+        // Plan $8,000 including an $850 tax line. October: $2,551 set aside from a job's Gross (covers the line).
+        // November: a booked $9,000 job at a 28% set-aside rate covers it too; December has nothing booked.
+        let nov = BookedJobInfo(id: UUID(), title: "Nov", expectedDate: day(2026, 11, 10), expectedGross: 9000, expectedNet: 7150)
+        var paid = BookedJobInfo(id: UUID(), title: "Paid, Net pending", expectedDate: day(2026, 10, 3), expectedGross: 9000, expectedNet: 1000)
+        paid.grossReceived = true
+        let months = CashFlowForecast.months(entries: [net(7150, day(2026, 10, 2))], booked: [nov, paid], plannedMonthly: 8000, now: now, count: 3,
+                                             taxLine: 850, setAsideByMonth: ["2026-10": 2551], setAsideRate: 0.28, calendar: calendar)
+        #expect(months[0].planned == 7150)       // capped at the tax line
+        #expect(months[1].planned == 7150)       // expected set-aside 2,520 ≥ 850
+        #expect(months[2].planned == 8000)
+        // A paid job's set-aside is already decided, so it adds nothing: a small line shows the cap isn't hiding it.
+        let small = CashFlowForecast.months(entries: [], booked: [paid], plannedMonthly: 8000, now: now, count: 1, taxLine: 5000, setAsideRate: 0.28, calendar: calendar)
+        #expect(small[0].planned == 8000)
+    }
+
     @Test func longOverdueBookingsStopCounting() {
         let stale = BookedJobInfo(id: UUID(), title: "April", expectedDate: day(2026, 4, 10), expectedGross: 7000, expectedNet: 4500)
         let recent = BookedJobInfo(id: UUID(), title: "Sept", expectedDate: day(2026, 9, 15), expectedGross: 5000, expectedNet: 3000)

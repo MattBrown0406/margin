@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// The budget summary sent to Ask Bedrock: totals and category names only, never transactions or merchants.
 struct AskContext: Encodable {
@@ -37,6 +38,8 @@ struct AffordView: View {
     @State private var answer: String?
     @State private var asking = false
     @State private var askError: String?
+    @Query private var allocations: [NetAllocation]
+    @Query private var settingsList: [FinanceSettings]
     /// Ask Bedrock sends budget details to an outside AI provider, so the first use asks permission.
     @AppStorage("askBedrockConsent") private var askConsent = false
     @State private var confirmingAsk = false
@@ -46,7 +49,7 @@ struct AffordView: View {
     private var entries: [LedgerEntry] { transactions.map(\.ledgerEntry) }
     private var safe: SafeToSpend { .compute(entries: entries, lines: categories.map(\.planLine), now: now) }
     private var forecast: [ForecastMonth] {
-        CashFlowForecast.months(entries: entries, booked: BookedJob.expectedIncome(bookedJobs, entries: entries), plannedMonthly: categories.reduce(0) { $0 + $1.monthlyLimit }, now: now)
+        MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: FinanceSettings.pick(settingsList), now: now).forecast
     }
     private var verdict: AffordabilityVerdict? {
         Double(moneyInput: amount).map { Affordability.evaluate(amount: $0, in: targetMonth, now: now, safe: safe, forecast: forecast) }
