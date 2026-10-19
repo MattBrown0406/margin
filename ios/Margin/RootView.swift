@@ -137,6 +137,17 @@ struct RootView: View {
                 }
             }
         }
+        // A booking mark made on a standalone bank transfer can reach this device after the transfer was merged into
+        // its job here. Bank-imported transfers' original ids are derivable, so point such marks at the live entry.
+        let liveJobs = Set(transactions.filter { !$0.isDeleted }.compactMap(\.jobID))
+        let byBankJob = Dictionary(transactions.filter { !$0.isDeleted && $0.isIncome && $0.incomeKind == "net" }.compactMap { tx in
+            tx.externalID.flatMap { ext in tx.jobID.map { (BankAccountsView.bankJobID(ext), $0) } } }, uniquingKeysWith: { a, _ in a })
+        for booking in bookedJobs {
+            if let paid = booking.paidJobID, !liveJobs.contains(paid), let live = byBankJob[paid], live != paid { booking.paidJobID = live; changed = true }
+            if booking.ignoredPaymentIDs.contains(where: { !liveJobs.contains($0) && byBankJob[$0] != nil }) {
+                booking.ignoredPaymentIDs = booking.ignoredPaymentIDs.map { liveJobs.contains($0) ? $0 : (byBankJob[$0] ?? $0) }; changed = true
+            }
+        }
         // Each device may create money-tool settings before iCloud delivers the other's: fold them into the oldest.
         // Two devices can each decide a job's tax set-aside before syncing: keep one decision per job, a set-aside
         // over a "not now", the earliest of equals.
@@ -397,6 +408,7 @@ struct IncomeTotalCard: View {
 
 struct RecordNetTransferView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
+    @Query private var bookedJobs: [BookedJob]
     let grossEntry: Transaction
     let transactions: [Transaction]
     @State private var amount = ""; @State private var date = Date()
@@ -425,7 +437,16 @@ struct RecordNetTransferView: View {
         }
         Section { Button(existing == nil ? "Record Net transfer" : "Link transfer") {
             if grossEntry.jobID == nil { grossEntry.jobID = UUID() }
-            if let existing { existing.jobID = grossEntry.jobID; try? context.save(); dismiss(); return }
+            if let existing {
+                // A standalone transfer may have been marked as a booking's payment; that mark follows it to the job.
+                if let old = existing.jobID, let job = grossEntry.jobID, old != job {
+                    for booking in bookedJobs {
+                        if booking.paidJobID == old { booking.paidJobID = job }
+                        if booking.ignoredPaymentIDs.contains(old) { booking.ignoredPaymentIDs = booking.ignoredPaymentIDs.map { $0 == old ? job : $0 } }
+                    }
+                }
+                existing.jobID = grossEntry.jobID; try? context.save(); dismiss(); return
+            }
             guard let value = Double(moneyInput: amount) else { return }
             context.insert(Transaction(title: grossEntry.title, amount: value, date: date, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: grossEntry.jobID)); try? context.save(); dismiss()
         }.frame(maxWidth: .infinity).bold().disabled(existing == nil && Double(moneyInput: amount) == nil) }
