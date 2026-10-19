@@ -68,14 +68,14 @@ private struct SyncResponse: Codable { let added: Int; let modified: Int; let re
         linkToken = nil
         if let itemID = repairingItemID, let connection = connections.first(where: { $0.itemId == itemID }) { repairingItemID = nil; await sync(connection); return }
         repairingItemID = nil
-        guard let api else { return }
+        guard let api else { errorMessage = Self.sessionEnded; return }
         await work {
             _ = try await api.request("/v1/plaid/exchange", method: "POST", body: ["publicToken": publicToken, "institutionName": institutionName], as: ExchangeResponse.self)
             self.connections = try await api.request("/v1/plaid/accounts", as: ConnectionsResponse.self).connections
         }
     }
     func sync(_ connection: BankConnectionDTO) async {
-        guard let api else { return }
+        guard let api else { errorMessage = Self.sessionEnded; return }
         await work {
             // A very large first sync arrives in parts; keep going while the service says there's more (bounded).
             var response = try await api.request("/v1/plaid/sync", method: "POST", body: ["itemId": connection.itemId], as: SyncResponse.self)
@@ -91,7 +91,7 @@ private struct SyncResponse: Codable { let added: Int; let modified: Int; let re
         if let fresh = try? await api.request("/v1/plaid/accounts", as: ConnectionsResponse.self).connections { connections = fresh }
     }
     func disconnect(_ connection: BankConnectionDTO) async {
-        guard let api else { return }
+        guard let api else { errorMessage = Self.sessionEnded; return }
         struct Result: Codable { let disconnected: Bool }
         await work {
             _ = try await api.request("/v1/plaid/connections/\(connection.itemId)", method: "DELETE", as: Result.self)
@@ -99,6 +99,7 @@ private struct SyncResponse: Codable { let added: Int; let modified: Int; let re
             self.connections.removeAll { $0.id == connection.id }; self.reviewTransactions.removeAll { accountIDs.contains($0.accountId) }
         }
     }
+    private static let sessionEnded = "Your session ended. Sign in again in Settings."
     private func work(_ action: @escaping () async throws -> Void) async {
         isWorking = true; errorMessage = nil
         do { try await action() } catch { errorMessage = error.localizedDescription }
@@ -162,7 +163,7 @@ struct BankAccountsView: View {
                         Button { Task { await model.sync(connection) } } label: { Label("Sync transactions", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).tint(.marginInk).disabled(model.isWorking)
                     }.marginCard()
                 }
-                Button { Task { await model.beginLink() } } label: { Label(model.connections.isEmpty ? "Connect Bank of America" : "Connect another account", systemImage: "plus.circle.fill").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).tint(.marginInk).disabled(model.isWorking || !model.isConfigured)
+                Button { Task { await model.beginLink() } } label: { Label(model.connections.isEmpty ? "Connect a bank" : "Connect another account", systemImage: "plus.circle.fill").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).tint(.marginInk).disabled(model.isWorking || !model.isConfigured)
 
                 if !awaitingReview.isEmpty {
                     Text("Review before importing").font(.title2.bold())
@@ -334,7 +335,7 @@ struct PlaidLinkPresenter: UIViewControllerRepresentable {
             let configuration = LinkTokenConfiguration(
                 token: linkToken,
                 onSuccess: { success in onSuccess(success.publicToken, success.metadata.institution.name) },
-                onExit: { exit in onExit(exit.error?.localizedDescription) },
+                onExit: { exit in onExit(exit.error.map { $0.displayMessage ?? $0.errorMessage }) },
                 onEvent: { _ in },
                 onLoad: {}
             )

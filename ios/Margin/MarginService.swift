@@ -72,12 +72,12 @@ struct MarginAPI {
         return MarginAPI(baseURL: url, sessionToken: token)
     }
 
-    func request<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, as: T.Type) async throws -> T {
+    func request<T: Decodable>(_ path: String, method: String = "GET", body: [String: Any]? = nil, timeout: TimeInterval = 30, as: T.Type) async throws -> T {
         // Appending (not resolving) keeps a path prefix on the base URL, e.g. https://host/margin/v1/...
         var request = URLRequest(url: baseURL.appending(path: path)); request.httpMethod = method
         if let sessionToken { request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization") }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
+        request.timeoutInterval = timeout
         if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MarginAPIError(message: "No response from Bedrock’s service") }

@@ -5,6 +5,8 @@ const httpError = (status, message, extra = {}) => Object.assign(new Error(messa
 const billedFailure = () => httpError(502, 'Ask Bedrock could not answer right now', { billed: true });
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const MAX_TOKENS = 3000;
+// Give up before the app does (it waits 60 s), so a reply the phone never shows isn't billed or counted.
+export const ASK_TIMEOUT_MS = 50_000;
 const CONTEXT_MAX_DEPTH = 6, CONTEXT_MAX_ENTRIES = 400;
 
 export const SYSTEM_PROMPT = `You are Bedrock's budgeting assistant. The person you help is self-employed: their income arrives per job rather than as a salary. "Gross" is what a job paid into their business account; "Net" is what they then transferred to their personal account to live on.
@@ -65,7 +67,7 @@ export function createAssistant(config, { loadSdk = () => import('@anthropic-ai/
     if (sdk) return sdk;
     let Anthropic;
     try { ({ default: Anthropic } = await loadSdk()); } catch (error) { console.error('Ask Bedrock: @anthropic-ai/sdk could not be loaded; run npm install in backend/', error.message); throw httpError(503, "Ask Bedrock isn't configured"); }
-    sdk = { Anthropic, client: new Anthropic({ apiKey: config.anthropicApiKey, maxRetries: 1 }) };
+    sdk = { Anthropic, client: new Anthropic({ apiKey: config.anthropicApiKey, maxRetries: 0, timeout: ASK_TIMEOUT_MS }) };
     return sdk;
   }
   return {

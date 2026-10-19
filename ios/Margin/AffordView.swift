@@ -95,7 +95,7 @@ struct AffordView: View {
             encoder.dateEncodingStrategy = .formatted(ISO8601DateFormatter.marginDate)
             let data = try encoder.encode(context(verdict: verdict, description: description.isEmpty ? "Unnamed purchase" : description, amount: value))
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-            let reply = try await api.request("/v1/ask", method: "POST", body: ["question": question, "context": json], as: AskResponse.self).answer
+            let reply = try await api.request("/v1/ask", method: "POST", body: ["question": question, "context": json], timeout: 60, as: AskResponse.self).answer
             // Ignore a reply for a purchase the person has since changed.
             guard amount == askedAmount, monthOffset == askedMonth, what == askedWhat else { return }
             answer = reply

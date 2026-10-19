@@ -306,7 +306,7 @@ struct RemindersSection: View {
             Toggle("Net waiting to be assigned", isOn: binding(\.remindNet))
             Toggle("Quarterly tax deadlines", isOn: binding(\.remindTaxes))
             if denied {
-                Text("Notifications are off for Bedrock. Turn them on in the Settings app › Bedrock › Notifications.").font(.caption).foregroundStyle(Color.marginCoral)
+                Text("Notifications are off for Bedrock. Turn them on in Settings › Apps › Bedrock › Notifications.").font(.caption).foregroundStyle(Color.marginCoral)
             }
         } header: { Text("Reminders") } footer: {
             Text("At 9 AM: two days before a bill is due, the morning after Net arrives if it’s still unassigned, and a week before an estimated-tax payment.")

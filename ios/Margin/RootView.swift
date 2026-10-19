@@ -120,7 +120,7 @@ struct TodayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) { Text("BEDROCK").font(.caption.bold()).tracking(2); Text("\(greeting), Matt").font(.title2.bold()) }
+                    VStack(alignment: .leading, spacing: 4) { Text("BEDROCK").font(.caption.bold()).tracking(2); Text(greeting).font(.title2.bold()) }
                     Spacer()
                     NavigationLink { AccountView() } label: { Image(systemName: "gearshape").font(.title3).padding(10) }.tint(.marginInk).accessibilityLabel("Settings")
                     Image("MarginLogo")

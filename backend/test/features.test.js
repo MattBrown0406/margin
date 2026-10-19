@@ -248,7 +248,7 @@ test('createAssistant is off without a key and sends the documented request thro
   assert.equal(await assistant.answer({ question: 'Can I?', context: snapshot }), 'Fits in November.');
   const sent = requests[0];
   assert.deepEqual({ ...sent, system: undefined, messages: undefined }, { model: 'claude-opus-5-5', max_tokens: 3000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', output_config: { effort: 'low' }, system: undefined, messages: undefined });
-  assert.deepEqual(constructed, [{ apiKey: 'sk-test', maxRetries: 1 }]);
+  assert.deepEqual(constructed, [{ apiKey: 'sk-test', maxRetries: 0, timeout: 50_000 }]);
   assert.equal(sent.system, SYSTEM_PROMPT);
   assert.deepEqual(sent.messages, [{ role: 'user', content: `Budget snapshot (JSON, computed on the user's phone):\n${JSON.stringify(snapshot)}\n\nQuestion: Can I?` }]);
   for (const [ErrorClass, status] of [[RateLimitError, 429], [AuthenticationError, 503], [APIError, 502]]) {

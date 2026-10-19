@@ -43,6 +43,8 @@
 		CD1080A364F2558C80EE6656 /* Recurring.swift in Sources */ = {isa = PBXBuildFile; fileRef = F325CF658CD7654AED0BB2F0 /* Recurring.swift */; };
 		91194AB1E8BD7237F1AC04FE /* EverydayViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88528DC7E552AC3F34EF9B26 /* EverydayViews.swift */; };
 		7E865A565A21CFB3754F7B9A /* Everyday.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C931DB4447D2920AF2017E9 /* Everyday.swift */; };
+		A1B2C3D4E5F60718293A4B02 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B01 /* PrivacyInfo.xcprivacy */; };
+		A1B2C3D4E5F60718293A4B04 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B03 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,6 +95,8 @@
 		F325CF658CD7654AED0BB2F0 /* Recurring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recurring.swift; sourceTree = "<group>"; };
 		88528DC7E552AC3F34EF9B26 /* EverydayViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EverydayViews.swift; sourceTree = "<group>"; };
 		8C931DB4447D2920AF2017E9 /* Everyday.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Everyday.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B01 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B03 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -142,6 +146,7 @@
 			children = (
 				F4E206316B95F6B7C1768586 /* Assets.xcassets */,
 				2DFC1934796351CACE6E9D88 /* Info.plist */,
+				A1B2C3D4E5F60718293A4B01 /* PrivacyInfo.xcprivacy */,
 				C06AECF66CD80B41B9EFE626 /* Margin.entitlements */,
 				B540CCFB01AEEFE06E72BA87 /* Logic */,
 				BD9E1A7781DDD5E19C959A76 /* AccountView.swift */,
@@ -199,6 +204,7 @@
 			children = (
 				D428969F2CE222BFCB49F38A /* Info.plist */,
 				9DB4769C7E715B7FC11C0ECC /* MarginWidget.entitlements */,
+				A1B2C3D4E5F60718293A4B03 /* PrivacyInfo.xcprivacy */,
 				826BBA54A564157A39A09436 /* MarginWidget.swift */,
 			);
 			name = MarginWidget;
@@ -287,6 +293,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E3389B5F53E9970B92061AA5 /* Assets.xcassets in Resources */,
+				A1B2C3D4E5F60718293A4B02 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -294,6 +301,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F60718293A4B04 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -489,12 +497,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ios/Margin/Margin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -511,12 +523,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ios/Margin/Margin.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/Margin/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -532,6 +548,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ios/MarginWidget/MarginWidget.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
@@ -553,6 +570,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ios/MarginWidget/MarginWidget.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 4D2KRG86P2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ios/MarginWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Bedrock;
