@@ -85,26 +85,29 @@ struct RootView: View {
         for group in Dictionary(grouping: goals, by: { $0.name.lowercased() }).values where group.count > 1 {
             survivorsFirst(group, createdAt: \.createdAt, id: \.id).dropFirst().forEach { context.delete($0); changed = true }
         }
-        // Two devices can import the same bank transaction before iCloud syncs: keep one per bank id, preferring the
-        // copy whose job other records point at (Nets, expenses, tax set-asides), so those links aren't orphaned.
+        // Two devices can import the same bank transaction before iCloud syncs: keep one per bank id.
         let duplicateGroups = Dictionary(grouping: transactions.filter { $0.externalID != nil }, by: { $0.externalID ?? "" }).values.filter { $0.count > 1 }
         if !duplicateGroups.isEmpty {
+            func isGross(_ tx: Transaction) -> Bool { tx.isIncome && tx.incomeKind == "gross" && tx.jobID != nil }
             var references: [UUID: Int] = [:]
             for tx in transactions { if let job = tx.jobID { references[job, default: 0] += 1 } }
             for allocation in allocations { if let job = UUID(uuidString: allocation.target) { references[job, default: 0] += 1 } }
-            // A copy's own jobID counts once for itself; anything above that is another record linking to it.
-            func links(_ tx: Transaction) -> Int { tx.jobID.map { (references[$0] ?? 0) - 1 } ?? 0 }
+            for booking in bookedJobs { if let job = booking.paidJobID { references[job, default: 0] += 1 } }
+            // For a Gross, prefer the copy other records point at (Nets, expenses, tax decision, a paid booking).
+            func links(_ tx: Transaction) -> Int { isGross(tx) ? (tx.jobID.map { references[$0] ?? 0 } ?? 0) - 1 : 0 }
             for group in duplicateGroups {
                 let sorted = group.sorted { (-links($0), $0.id.uuidString) < (-links($1), $1.id.uuidString) }
                 let survivor = sorted[0]
                 for loser in sorted.dropFirst() {
-                    // Anything still linked to the copy being removed (its Nets, expenses, tax decision) moves to the
-                    // survivor's job, so nothing is orphaned or counted twice; duplicate decisions are folded below.
-                    if let lost = loser.jobID {
-                        if survivor.jobID == nil { survivor.jobID = lost }
-                        if let kept = survivor.jobID, kept != lost {
-                            for tx in transactions where tx.jobID == lost && tx.id != loser.id { tx.jobID = kept }
-                            for allocation in allocations where allocation.target == lost.uuidString { allocation.target = kept.uuidString }
+                    // A Gross's jobID is the job itself, so two copies of one Gross are one job: whatever points at
+                    // the removed copy's job moves to the survivor's. A Net's or expense's jobID points at some other
+                    // job's Gross, so it is never merged — that would fuse two different jobs.
+                    if isGross(loser), isGross(survivor), let lost = loser.jobID, let kept = survivor.jobID, lost != kept {
+                        for tx in transactions where tx.jobID == lost && tx.id != loser.id { tx.jobID = kept }
+                        for allocation in allocations where allocation.target == lost.uuidString { allocation.target = kept.uuidString }
+                        for booking in bookedJobs {
+                            if booking.paidJobID == lost { booking.paidJobID = kept }
+                            if booking.ignoredPaymentIDs.contains(lost) { booking.ignoredPaymentIDs = booking.ignoredPaymentIDs.map { $0 == lost ? kept : $0 } }
                         }
                     }
                     context.delete(loser); changed = true
@@ -231,13 +234,13 @@ struct PlanView: View {
     private var netIncome: Double { month.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" }.reduce(0) { $0 + $1.amount } }
     private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var planned: Double { categories.reduce(0) { $0 + $1.monthlyLimit } }
-    /// This month's Net (plus late Net carried in from last month) against what the plan needs from Net: tax set
-    /// aside from Gross already funds that much of the tax line.
-    private var left: Double {
-        let facts = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
-                               settings: FinanceSettings.pick(financeSettings), months: 1)
-        return netIncome + (facts.forecast.first?.carriedIn ?? 0) - facts.plannedFromNetThisMonth
+    /// NET INCOME includes late-last-month Net still unassigned (it funds this month); PLANNED is what the plan needs
+    /// from Net, since tax already set aside from Gross funds that much of the tax line.
+    private var facts: MoneyFacts {
+        MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
+                   settings: FinanceSettings.pick(financeSettings), months: 1)
     }
+
     private var groupNames: [String] { Array(Set(categories.map(\.groupName))).sorted() }
 
     var body: some View {
@@ -263,11 +266,16 @@ struct PlanView: View {
                     Button("Use the starter budget") { StarterBudget.insert(into: context) }.buttonStyle(.borderedProminent).tint(.marginInk)
                 }.marginCard()
             }
+            // Computed once: MoneyFacts walks every transaction.
+            let facts = facts, carriedIn = facts.forecast.first?.carriedIn ?? 0, netIn = netIncome + carriedIn, plannedFromNet = facts.plannedFromNetThisMonth
             HStack(spacing: 10) {
-                PlanSummary(label: "NET INCOME", value: netIncome, dark: true)
-                PlanSummary(label: "PLANNED", value: planned, dark: false)
-                PlanSummary(label: "LEFT", value: left, dark: false)
+                PlanSummary(label: "NET INCOME", value: netIn, dark: true)
+                PlanSummary(label: "PLANNED", value: plannedFromNet, dark: false)
+                PlanSummary(label: "LEFT", value: netIn - plannedFromNet, dark: false)
             }
+            let notes = [carriedIn > 0.005 ? "Net includes \(carriedIn.money) that arrived late last month." : nil,
+                         planned - plannedFromNet > 0.005 ? "Planned is after \((planned - plannedFromNet).money) of tax set aside from job payments." : nil].compactMap { $0 }
+            if !notes.isEmpty { Text(notes.joined(separator: " ")).font(.caption).foregroundStyle(.secondary) }
             ForEach(groupNames, id: \.self) { group in
                 VStack(alignment: .leading, spacing: 9) {
                     Text(group.uppercased()).font(.caption.bold()).tracking(1)

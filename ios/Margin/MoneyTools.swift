@@ -32,8 +32,10 @@ struct MoneyFacts {
         let setsAside = setAsides.contains { $0.date >= yearAgo }
         let rate = setsAside ? JobTaxSetAside.rate(transactions: transactions, settings: settings, year: calendar.component(.year, from: now), now: now) : 0
         // A typical month's set-aside: the rate applied to the last year's average monthly Gross.
-        let yearGross = entries.filter { $0.isGross && $0.date >= yearAgo && $0.date <= now }.total
-        plannedFromNet = max(0, planned - min(taxLine, rate * yearGross / 12))
+        let yearGrosses = entries.filter { $0.isGross && $0.date >= yearAgo && $0.date < calendar.endOfDay(for: now) }
+        // Averaged over the months actually covered (bank history may only reach back a few months), at most 12.
+        let months = yearGrosses.map(\.date).min().map { min(12, max(1, calendar.monthsBetween($0, now) + 1)) } ?? 12
+        plannedFromNet = max(0, planned - min(taxLine, rate * yearGrosses.total / Double(months)))
         plannedFromNetThisMonth = max(0, planned - min(taxLine, byMonth[calendar.monthKey(for: now)] ?? 0))
         let expected = BookedJob.expectedIncome(bookedJobs, entries: entries)
         forecast = CashFlowForecast.months(entries: entries, booked: expected, plannedMonthly: planned, now: now, count: months,
@@ -210,7 +212,9 @@ struct AssignNetView: View {
     private var suggestions: [AllocationLine] {
         var assigned = Dictionary(thisMonth.filter { $0.kind != AllocationTarget.Kind.extra.rawValue }.map { ($0.target, $0.amount) }, uniquingKeysWith: +)
         // Tax set aside from this month's job payments already covers that much of the month's tax line.
-        let key = Calendar.current.monthKey(for: .now), taxLine = settings?.taxLineName ?? "Tax reserve"
+        let key = Calendar.current.monthKey(for: .now), taxLineSetting = settings?.taxLineName ?? "Tax reserve"
+        // The plan line's own spelling, so a "Tax Reserve" line still matches a "Tax reserve" setting.
+        let taxLine = categories.first { $0.name.caseInsensitiveCompare(taxLineSetting) == .orderedSame }?.name ?? taxLineSetting
         // Each counts once, in the later of its job's month and the month it was made (Net usually lags its job's Gross).
         assigned[taxLine, default: 0] += allocations.filter { $0.kind == AllocationKinds.grossTax && max($0.monthKey, Calendar.current.monthKey(for: $0.date)) == key }.reduce(0) { $0 + $1.amount }
         let spent = Dictionary(transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }

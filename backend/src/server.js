@@ -7,6 +7,8 @@ import { createAssistant } from './assistant.js';
 
 const config = loadConfig();
 const store = new FileStore(config.dataFile, config.encryptionKey);
+// Rewrite the data file once at start so data saved by older versions is normalised on disk, not only in memory.
+store.update(() => {}).catch(error => console.warn(`Data file could not be normalised: ${error?.message || 'unknown error'}`));
 const plaid = new PlaidClient(config);
 const apple = new AppleIdentityVerifier({ bundleId: config.appleBundleId });
 const appleTokens = new AppleTokenClient({ bundleId: config.appleBundleId, teamId: config.appleTeamId, keyId: config.appleKeyId, privateKey: config.applePrivateKey });
