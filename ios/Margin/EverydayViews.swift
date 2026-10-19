@@ -88,6 +88,8 @@ struct TransactionEditView: View {
     }
 
     private func save() {
+        // iCloud de-duplication can remove this copy while the sheet is open; writing to it then would crash.
+        guard tx.modelContext != nil, !tx.isDeleted else { dismiss(); return }
         guard let value else { return }
         let originalTitle = tx.title, oldDate = tx.date
         tx.title = title.trimmingCharacters(in: .whitespacesAndNewlines); tx.date = date

@@ -33,9 +33,10 @@ struct MoneyFacts {
         let rate = setsAside ? JobTaxSetAside.rate(transactions: transactions, settings: settings, year: calendar.component(.year, from: now), now: now) : 0
         // A typical month's set-aside: the rate applied to the last year's average monthly Gross.
         let yearGrosses = entries.filter { $0.isGross && $0.date >= yearAgo && $0.date < calendar.endOfDay(for: now) }
-        // Averaged over the months actually covered (bank history may only reach back a few months), at most 12.
-        let months = yearGrosses.map(\.date).min().map { min(12, max(1, calendar.monthsBetween($0, now) + 1)) } ?? 12
-        plannedFromNet = max(0, planned - min(taxLine, rate * yearGrosses.total / Double(months)))
+        // Averaged over the months the ledger actually covers (bank history may only reach back a few months), at most
+        // 12. Counted from the earliest entry of any kind, so a lone recent job isn't treated as every month's income.
+        let monthsOnRecord = entries.filter { $0.date >= yearAgo }.map(\.date).min().map { min(12, max(1, calendar.monthsBetween($0, now) + 1)) } ?? 12
+        plannedFromNet = max(0, planned - min(taxLine, rate * yearGrosses.total / Double(monthsOnRecord)))
         plannedFromNetThisMonth = max(0, planned - min(taxLine, byMonth[calendar.monthKey(for: now)] ?? 0))
         let expected = BookedJob.expectedIncome(bookedJobs, entries: entries)
         forecast = CashFlowForecast.months(entries: entries, booked: expected, plannedMonthly: planned, now: now, count: months,
