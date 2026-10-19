@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { once } from 'node:events';
-import { createApp } from '../src/app.js';
+import { createApp, MAX_BANK_CONNECTIONS } from '../src/app.js';
 import { FileStore } from '../src/store.js';
 import { signTestToken } from '../src/auth.js';
 import { loadConfig } from '../src/config.js';
@@ -166,6 +166,7 @@ test('account deletion stops on other Plaid errors, keeps remaining data, and ca
     const left = (await f.call('/v1/plaid/accounts')).data.connections.map(c => c.itemId);
     assert.deepEqual(left, ['item-b']);
     assert.equal(Object.hasOwn((await f.readDisk()).users, 'matt'), true);
+    assert.equal((await f.readDisk()).users.matt.deleting, undefined, 'an abandoned deletion must not keep refusing links');
     failing = false;
     assert.equal((await f.call('/v1/account', { method: 'DELETE' })).status, 200);
     assert.equal(Object.hasOwn((await f.readDisk()).users, 'matt'), false);
@@ -271,4 +272,15 @@ test('config validates the session TTL and defaults the new settings', () => {
   assert.deepEqual([config.appleBundleId, config.sessionTtlDays, config.anthropicApiKey, config.anthropicModel], ['', 30, '', 'claude-opus-5-5']);
   assert.equal(loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: '90' }).sessionTtlDays, 90);
   for (const bad of ['0', '91', '365', '1.5', 'thirty', '-3']) assert.throws(() => loadConfig({ ...base, MARGIN_SESSION_TTL_DAYS: bad }), /MARGIN_SESSION_TTL_DAYS/);
+});
+
+test('a new bank link is refused once the connection cap is reached; repairing an existing one still works', async () => {
+  const f = await fixture();
+  try {
+    for (let i = 0; i < MAX_BANK_CONNECTIONS; i++) await f.link(`bank${i}`);
+    const refused = await f.post('/v1/plaid/link-token', {});
+    assert.equal(refused.status, 409);
+    assert.match(refused.data.error, /up to 10 banks/);
+    assert.equal((await f.post('/v1/plaid/link-token', { itemId: 'item-bank0' })).status, 200);
+  } finally { await f.close(); }
 });

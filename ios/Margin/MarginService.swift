@@ -82,8 +82,10 @@ struct MarginAPI {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MarginAPIError(message: "No response from Bedrock’s service") }
         guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401, sessionToken != nil {
-                SessionTokenStore().delete()
+            if http.statusCode == 401, let sessionToken {
+                // Only forget the session this request used: a newer sign-in may have replaced it meanwhile.
+                let store = SessionTokenStore()
+                if store.read() == sessionToken { store.delete() }
                 throw MarginAPIError(message: "Your session ended. Sign in again in Settings.", status: 401)
             }
             let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String

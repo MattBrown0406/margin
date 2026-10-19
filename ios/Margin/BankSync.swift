@@ -335,7 +335,7 @@ struct PlaidLinkPresenter: UIViewControllerRepresentable {
             let configuration = LinkTokenConfiguration(
                 token: linkToken,
                 onSuccess: { success in onSuccess(success.publicToken, success.metadata.institution.name) },
-                onExit: { exit in onExit(exit.error.map { $0.displayMessage ?? $0.errorMessage }) },
+                onExit: { exit in onExit(exit.error.map { error in error.displayMessage.flatMap { $0.isEmpty ? nil : $0 } ?? error.errorMessage }) },
                 onEvent: { _ in },
                 onLoad: {}
             )

@@ -56,6 +56,8 @@ export class FileStore {
   // Step one of account deletion: from here on saveItem refuses, so no Item can appear behind the Plaid sweep.
   // Creates the record if needed, so even a user with no data is protected.
   async beginDeletion(userId, sessionGen) { return this.update(data => { if (!isCurrentSession(sessionGen, generationOf(data, userId))) throw sessionEnded(); if (!own(data.users, userId)) data.users[writableKey(userId)] = newUser(); data.users[userId].deleting = true; return true; }); }
+  // A deletion that stopped on an error and was abandoned must not leave the account refusing new links forever.
+  async cancelDeletion(userId) { return this.update(data => { const user = own(data.users, userId); if (user) delete user.deleting; return true; }); }
   // Final step of account deletion, atomic: refuses while Items remain (so one is never dropped without being
   // revoked at Plaid), otherwise deletes the user and ends every session together.
   async deleteUser(userId) { return this.update(data => { writableKey(userId); const user = own(data.users, userId); if (user && Object.keys(user.items).length) throw Object.assign(new Error('Account changed during deletion; try again'), { status: 409 }); if (user) delete data.users[userId]; data.sessionGenerations[userId] = generationOf(data, userId) + 1; return true; }); }

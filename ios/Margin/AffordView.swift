@@ -37,6 +37,9 @@ struct AffordView: View {
     @State private var answer: String?
     @State private var asking = false
     @State private var askError: String?
+    /// Ask Bedrock sends budget details to an outside AI provider, so the first use asks permission.
+    @AppStorage("askBedrockConsent") private var askConsent = false
+    @State private var confirmingAsk = false
 
     private var now: Date { .now }
     private var targetMonth: Date { Calendar.current.date(byAdding: .month, value: monthOffset, to: Calendar.current.startOfMonth(for: now)) ?? now }
@@ -68,14 +71,21 @@ struct AffordView: View {
                 if let answer { Text(answer).font(.subheadline) }
                 if let askError { Text(askError).font(.subheadline).foregroundStyle(.red) }
                 if MarginAPI.signedIn() != nil {
-                    Button { Task { await ask(verdict) } } label: { Label(answer == nil ? "Ask Bedrock for a plan" : "Ask again", systemImage: "sparkles") }.disabled(asking)
+                    Button { if askConsent { Task { await ask(verdict) } } else { confirmingAsk = true } } label: { Label(answer == nil ? "Ask Bedrock for a plan" : "Ask again", systemImage: "sparkles") }.disabled(asking)
                     if asking { ProgressView() }
                 } else {
                     NavigationLink("Sign in to get a personal plan") { AccountView() }
                 }
-            } header: { Text("Ask Bedrock") } footer: { Text("Sends a summary of your budget totals, never your transactions, to Bedrock’s assistant.") }
+            } header: { Text("Ask Bedrock") } footer: { Text("Sends a summary of your budget totals and this purchase, never your transactions, to Claude, an AI model by Anthropic, to write the plan.") }
         }
     }.numberPadDone().navigationTitle("Can I afford it?")
+     // On the Form, not a Section: a presentation attached inside a Form section never shows.
+     .alert("Share with Anthropic’s AI?", isPresented: $confirmingAsk) {
+         Button("Share and ask") { askConsent = true; if let verdict { Task { await ask(verdict) } } }
+         Button("Cancel", role: .cancel) {}
+     } message: {
+         Text("To answer, Bedrock sends your budget totals, bills, forecast and this purchase to Claude, an AI model made by Anthropic. Your transactions and bank details are never sent.")
+     }
      .onChange(of: amount) { answer = nil; askError = nil }.onChange(of: monthOffset) { answer = nil; askError = nil }.onChange(of: what) { answer = nil; askError = nil }
      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } } } }
 

@@ -19,6 +19,7 @@ const GLOBAL_ASK_KEY = '*';
 // Ask failures that cost the user nothing useful (and, for 503/429, aren't billed): their quota slots are handed back.
 // Failures that cost nothing (rate limits, outages, an upstream API error) hand their quota back; a billed
 // response with no usable text (error.billed) keeps it, or empty replies could spend past the caps.
+export const MAX_BANK_CONNECTIONS = 10;
 const ASK_UNCOUNTED = new Set([429, 502, 503]);
 const APPLE_RETRY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -80,6 +81,8 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         // With an itemId this creates an update-mode token so the user can repair a broken login.
         const input = await body(req), itemId = cleanText(input.itemId, 128);
         const accessToken = itemId ? await store.getAccessToken(userId, itemId) : undefined;
+        // Each new link is a billed Plaid Item; a person never needs more than a handful.
+        if (!itemId && Object.keys((await store.getUser(userId)).items).length >= MAX_BANK_CONNECTIONS) throw httpError(409, `You can connect up to ${MAX_BANK_CONNECTIONS} banks. Disconnect one to add another.`);
         const result = await plaid.createLinkToken(userId, accessToken);
         return json(res, 200, { linkToken: result.link_token, expiration: result.expiration });
       }
@@ -129,14 +132,17 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         // a) Mark the account as being deleted: saveItem now refuses (409) and a racing link is removed at Plaid.
         await store.beginDeletion(userId, session.gen);
         // b) Revoke every Item at Plaid; a non-recoverable failure stops here with the remaining Items kept.
-        for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId);
+        // If it stops, the account is unmarked so an abandoned deletion doesn't block new links; a retry marks it again.
+        try { for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId); }
+        catch (error) { await store.cancelDeletion(userId).catch(() => {}); throw error; }
         // c) Revoke the Apple refresh token; on failure it is queued for retryPendingAppleRevocations, never lost.
         if (appleTokens?.configured) {
           try { const refreshToken = await store.getAppleRefreshToken(userId); if (refreshToken) await appleTokens.revoke(refreshToken); }
           catch (error) { warn('Apple token revocation failed; queued for retry', error); await store.queueAppleRevocation(userId, new Date(now()).toISOString()); }
         }
         // d) One atomic step: refuses (409) if an Item is still stored, else deletes the user and ends every session.
-        await store.deleteUser(userId);
+        try { await store.deleteUser(userId); }
+        catch (error) { await store.cancelDeletion(userId).catch(() => {}); throw error; }
         return json(res, 200, { deleted: true });
       }
       if (req.method === 'DELETE' && pathname === '/v1/session') {

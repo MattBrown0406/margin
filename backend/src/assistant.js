@@ -5,7 +5,8 @@ const httpError = (status, message, extra = {}) => Object.assign(new Error(messa
 const billedFailure = () => httpError(502, 'Ask Bedrock could not answer right now', { billed: true });
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const MAX_TOKENS = 3000;
-// Give up before the app does (it waits 60 s), so a reply the phone never shows isn't billed or counted.
+// Give up before the app does (it waits 60 s) so the person sees an error rather than a reply arriving after the phone
+// stopped waiting. A timed-out request isn't counted against the daily limit, though Anthropic may still bill it.
 export const ASK_TIMEOUT_MS = 50_000;
 const CONTEXT_MAX_DEPTH = 6, CONTEXT_MAX_ENTRIES = 400;
 
