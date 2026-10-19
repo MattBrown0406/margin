@@ -55,7 +55,7 @@ The branded package includes a generated `Margin.xcodeproj`, so on Matt's MacBoo
 /Users/mattbrown/Documents/MarginBudget/Margin.xcodeproj
 ```
 
-The final geometric Margin logo is installed as the native `AppIcon`, appears in the Today header, and is preserved in editable/source and export-ready form under `design/`.
+The Bedrock icon (polished charcoal granite with a gold vein) is installed as the native `AppIcon` and appears in the Today header. It is rendered procedurally, so it can be rebuilt exactly: `design/icon-render/make-icon.sh` regenerates `design/Bedrock-App-Icon-1024.png`, the App Store icon and the in-app logo sizes.
 
 If `project.yml` is changed later, regenerate the project with [XcodeGen](https://github.com/yonaskolb/XcodeGen):
 
