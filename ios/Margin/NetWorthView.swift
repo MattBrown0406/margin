@@ -88,9 +88,9 @@ struct NetWorthView: View {
             let loaded = bank.isConfigured && bank.errorMessage == nil
             balancesKnown = loaded || (!bank.isConfigured && debts.allSatisfy { $0.linkedAccountID == nil })
             if loaded { followBankBalances() }
-            removeDuplicateSnapshots(); recordSnapshot()
+            recordSnapshot(into: removeDuplicateSnapshots())
         }
-        .onChange(of: [assetsTotal, debtsTotal]) { recordSnapshot() }
+        .onChange(of: [assetsTotal, debtsTotal]) { recordSnapshot(into: currentSnapshot) }
         .sheet(isPresented: $adding) { AssetEditView(asset: nil) }
         .sheet(item: $editing) { AssetEditView(asset: $0) }
     }
@@ -127,18 +127,24 @@ struct NetWorthView: View {
         try? context.save()
     }
     /// Two devices can each start a month's snapshot: keep the most recently updated one per month.
-    private func removeDuplicateSnapshots() {
+    /// Keeps the newest snapshot per month and returns this month's survivor (the @Query array still lists the
+    /// deleted ones until it refreshes, and a change to a deleted model is lost).
+    private func removeDuplicateSnapshots() -> NetWorthSnapshot? {
         var changed = false
-        for group in Dictionary(grouping: snapshots, by: \.monthKey).values where group.count > 1 {
-            group.sorted { $0.updatedAt > $1.updatedAt }.dropFirst().forEach { context.delete($0); changed = true }
+        var survivor: NetWorthSnapshot?
+        for group in Dictionary(grouping: snapshots, by: \.monthKey).values {
+            let sorted = group.sorted { $0.updatedAt > $1.updatedAt }
+            if sorted.first?.monthKey == thisMonthKey { survivor = sorted.first }
+            sorted.dropFirst().forEach { context.delete($0); changed = true }
         }
         if changed { try? context.save() }
+        return survivor
     }
     /// Keeps one snapshot for this month, updated to the latest totals.
-    private func recordSnapshot() {
+    private func recordSnapshot(into current: NetWorthSnapshot?) {
         let owned = assetsTotal, owed = debtsTotal
         guard balancesKnown, owned > 0 || owed > 0 else { return }
-        if let snapshot = currentSnapshot {
+        if let snapshot = current {
             guard abs(snapshot.assets - owned) > 0.005 || abs(snapshot.debts - owed) > 0.005 else { return }
             snapshot.assets = owned; snapshot.debts = owed; snapshot.updatedAt = .now
         } else {

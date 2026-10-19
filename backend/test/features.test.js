@@ -284,3 +284,16 @@ test('a new bank link is refused once the connection cap is reached; repairing a
     assert.equal((await f.post('/v1/plaid/link-token', { itemId: 'item-bank0' })).status, 200);
   } finally { await f.close(); }
 });
+
+test('the privacy policy is served without sign-in', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'margin-privacy-'));
+  const server = createApp({ config: { plaidEnv: 'sandbox', jwtSecret: secret }, plaid: new FakePlaid(), store: new FileStore(path.join(dir, 'data.json'), encryptionKey) });
+  server.listen(0); await once(server, 'listening');
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/privacy`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /text\/html/);
+    const page = await response.text();
+    for (const required of ['Plaid', 'Anthropic', 'Delete account']) assert.ok(page.includes(required), required);
+  } finally { server.close(); await once(server, 'close'); await fs.rm(dir, { recursive: true, force: true }); }
+});

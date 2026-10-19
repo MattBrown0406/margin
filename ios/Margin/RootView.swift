@@ -38,6 +38,7 @@ struct RootView: View {
         .onChange(of: goals.count) { removeSyncDuplicates() }
         .onChange(of: financeSettings.count) { removeSyncDuplicates() }
         .onChange(of: allocations.count) { removeSyncDuplicates() }
+        .onChange(of: transactions.count) { removeSyncDuplicates() }
         // Keep the widget current whenever today's numbers change, and when returning to the app.
         .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
         .onChange(of: scenePhase) { _, phase in
@@ -83,6 +84,10 @@ struct RootView: View {
         }
         for group in Dictionary(grouping: goals, by: { $0.name.lowercased() }).values where group.count > 1 {
             survivorsFirst(group, createdAt: \.createdAt, id: \.id).dropFirst().forEach { context.delete($0); changed = true }
+        }
+        // Two devices can import the same bank transaction before iCloud syncs: keep one per bank id.
+        for group in Dictionary(grouping: transactions.filter { $0.externalID != nil }, by: { $0.externalID ?? "" }).values where group.count > 1 {
+            group.sorted { $0.id.uuidString < $1.id.uuidString }.dropFirst().forEach { context.delete($0); changed = true }
         }
         // Each device may create money-tool settings before iCloud delivers the other's: fold them into the oldest.
         // Two devices can each decide a job's tax set-aside before syncing: keep one decision per job, a set-aside

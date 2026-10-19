@@ -177,7 +177,9 @@ struct BankAccountsView: View {
                             if let match = possibleDuplicate(of: tx) {
                                 Label("Possible duplicate of “\(match.title)” on \(match.date.formatted(date: .abbreviated, time: .omitted))", systemImage: "doc.on.doc").font(.caption.bold()).foregroundStyle(.orange)
                             }
-                            if tx.amount > 0, ["TRANSFER_OUT", "LOAN_PAYMENTS"].contains(tx.category) {
+                            if tx.amount > 0, tx.category == "TRANSFER_OUT", accountScope(tx.accountId) == "business" {
+                                Label("Looks like money moved out of the business, probably your Net transfer. Skip it: paying yourself isn’t a business expense.", systemImage: "arrow.left.arrow.right").font(.caption).foregroundStyle(.secondary)
+                            } else if tx.amount > 0, ["TRANSFER_OUT", "LOAN_PAYMENTS"].contains(tx.category) {
                                 Label("Looks like a transfer or card payment. Skip it if the purchases are already counted.", systemImage: "arrow.left.arrow.right").font(.caption).foregroundStyle(.secondary)
                             }
                             if tx.amount < 0, ["TRANSFER_IN", "LOAN_PAYMENTS"].contains(tx.category) {

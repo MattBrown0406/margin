@@ -99,7 +99,7 @@ struct AccountView: View {
 
     private var iCloudStatus: String {
         if !MarginStore.isUsingCloudKit { return iCloudSync ? "Starts next launch" : "Off" }
-        return "On when signed in to iCloud"
+        return iCloudSync ? "On when signed in to iCloud" : "Stops next launch"
     }
 
     var body: some View {
@@ -120,6 +120,9 @@ struct AccountView: View {
                 if let message = account.message { Text(message).font(.subheadline).foregroundStyle(.secondary) }
             } header: { Text("Account") } footer: {
                 Text("Signing in unlocks bank connections and Ask Bedrock. Your budget itself stays on your devices and in your iCloud.")
+            }
+            if let privacy = MarginService.baseURL?.appending(path: "privacy") {
+                Section { Link(destination: privacy) { Label("Privacy Policy", systemImage: "hand.raised") } }
             }
             if let settings = FinanceSettings.pick(settingsList) { RemindersSection(settings: settings) }
             Section {

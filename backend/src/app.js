@@ -3,6 +3,7 @@ import { verifyBearerToken, signToken, isCurrentSession, sessionEnded } from './
 import { createAskLimiter, isAskContext } from './assistant.js';
 import { idTokenSubject } from './apple.js';
 import { MAX_SESSION_TTL_DAYS } from './config.js';
+import { privacyPolicyHtml } from './privacy.js';
 
 const json = (res, status, body) => { const data = JSON.stringify(body); res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(data), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' }); res.end(data); };
 const cleanText = (value, max = 100) => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -52,6 +53,7 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
   return http.createServer(async (req, res) => {
     try {
       const { pathname } = new URL(req.url || '/', 'http://localhost');
+      if (req.method === 'GET' && pathname === '/privacy') { const page = privacyPolicyHtml; res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(page), 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" }); return res.end(page); }
       if (req.method === 'GET' && pathname === '/health') return json(res, 200, { ok: true, plaidEnvironment: config.plaidEnv, credentialsConfigured: Boolean(config.plaidClientId && config.plaidSecret) });
       if (req.method === 'POST' && pathname === '/v1/auth/apple') {
         if (!apple || !config.appleBundleId || !config.jwtSecret || config.jwtSecret.length < 32) throw httpError(503, 'Sign in with Apple is not configured');
