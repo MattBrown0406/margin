@@ -119,12 +119,17 @@ struct RootView: View {
                         // or, for a Net with no Gross, is its own id that bookings may reference.
                         let loserLinked = loser.jobID.map(grossJobs.contains) ?? false
                         let survivorLinked = survivor.jobID.map(grossJobs.contains) ?? false
+                        // Only a Net's own id can be a standalone payment that bookings reference; an expense's job id
+                        // is always some job's, so bookings are never moved for expenses (that would swap jobs).
+                        let isNet = survivor.isIncome && survivor.incomeKind == "net"
                         if loserLinked, !survivorLinked, let job = loser.jobID {
                             // Keep the link the person made on the other device; bookings that pointed at this Net now
                             // point at the job it belongs to.
-                            if let old = survivor.jobID { repointBookings(from: old, to: job) }
+                            if isNet, let old = survivor.jobID, isStandaloneID(old) { repointBookings(from: old, to: job) }
                             survivor.jobID = job
-                        } else if !loserLinked, !survivorLinked, let lost = loser.jobID, let kept = survivor.jobID, lost != kept, isStandaloneID(lost) {
+                        } else if isNet, !loserLinked, survivorLinked, let lost = loser.jobID, let job = survivor.jobID, lost != job, isStandaloneID(lost) {
+                            repointBookings(from: lost, to: job)  // the other device's copy was a standalone Net a booking claimed
+                        } else if isNet, !loserLinked, !survivorLinked, let lost = loser.jobID, let kept = survivor.jobID, lost != kept, isStandaloneID(lost) {
                             repointBookings(from: lost, to: kept)
                         }
                     }

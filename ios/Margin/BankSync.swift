@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CryptoKit
 #if canImport(LinkKit)
 import LinkKit
 #endif
@@ -276,6 +277,13 @@ struct BankAccountsView: View {
     private func bankDay(_ text: String) -> Date? {
         ISO8601DateFormatter.marginDate.date(from: text).map { Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: $0) ?? $0 }
     }
+    /// A stable job id for a bank transaction: the same on every device (a name-based, version-5-style UUID).
+    static func bankJobID(_ bankID: String) -> UUID {
+        var bytes = Array(SHA256.hash(data: Data(("margin.job." + bankID).utf8)).prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50; bytes[8] = (bytes[8] & 0x3F) | 0x80
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                           bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
     private func possibleDuplicate(of tx: ImportedBankTransaction) -> Transaction? {
         guard let date = bankDay(tx.date) else { return nil }
         return existing.first { $0.externalID != tx.id && abs(abs($0.amount) - abs(tx.amount)) < 0.005 && abs($0.date.timeIntervalSince(date)) <= 3 * 86_400 }
@@ -290,7 +298,9 @@ struct BankAccountsView: View {
         let date = bankDay(imported.date) ?? .now
         let tx: Transaction
         if let kind = creditKind, kind != "refund" {
-            let jobID = kind == "net" ? (netJob(for: imported) ?? UUID()) : UUID()
+            // The job id of an imported Gross (or a Net with no Gross) comes from the bank's transaction id, so a copy
+            // imported on another device before iCloud syncs is the same job, and links made on either device agree.
+            let jobID = kind == "net" ? (netJob(for: imported) ?? Self.bankJobID(imported.id)) : Self.bankJobID(imported.id)
             tx = Transaction(title: imported.name, amount: abs(imported.amount), date: date, category: kind == "gross" ? "Intervention income" : "Owner transfer", isIncome: true, ledgerScope: kind == "gross" ? "business" : "personal", incomeKind: kind, jobID: jobID)
         } else {
             // A refund is stored as a negative expense so it reduces spending in its category.

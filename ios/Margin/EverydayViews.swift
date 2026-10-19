@@ -15,6 +15,8 @@ struct TransactionEditView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @State private var title = ""; @State private var amount = ""; @State private var isRefund = false; @State private var date = Date()
     @State private var scope = "personal"; @State private var category = ""; @State private var essential = true; @State private var jobID: UUID?
+    /// The job link when the sheet opened: only a link the person changed is written back (iCloud may move it meanwhile).
+    @State private var loadedJobID: UUID?
     @State private var loaded = false
 
     private var personalNames: [String] { categories.sorted { ($0.groupName, $0.name) < ($1.groupName, $1.name) }.map(\.name) }
@@ -87,7 +89,7 @@ struct TransactionEditView: View {
     private func load() {
         guard !loaded else { return }
         title = tx.title; amount = String(format: "%.2f", abs(tx.amount)); isRefund = !tx.isIncome && tx.amount < 0; date = tx.date
-        scope = tx.ledgerScope; category = tx.category; essential = tx.isEssential; jobID = tx.jobID
+        scope = tx.ledgerScope; category = tx.category; essential = tx.isEssential; jobID = tx.jobID; loadedJobID = tx.jobID
         loaded = true
     }
 
@@ -110,7 +112,7 @@ struct TransactionEditView: View {
             let changedCategory = category != tx.category || scope != tx.ledgerScope
             tx.amount = isRefund ? -value : value
             tx.ledgerScope = scope; tx.category = category; tx.isEssential = scope == "personal" ? essential : true
-            tx.jobID = scope == "business" ? jobID : nil
+            if scope != "business" { tx.jobID = nil } else if jobID != loadedJobID { tx.jobID = jobID }
             // A corrected category is the one to use for this merchant next time — under the bank's original
             // description too, since that's what the next import will carry.
             if changedCategory {
