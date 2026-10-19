@@ -85,9 +85,18 @@ struct RootView: View {
         for group in Dictionary(grouping: goals, by: { $0.name.lowercased() }).values where group.count > 1 {
             survivorsFirst(group, createdAt: \.createdAt, id: \.id).dropFirst().forEach { context.delete($0); changed = true }
         }
-        // Two devices can import the same bank transaction before iCloud syncs: keep one per bank id.
-        for group in Dictionary(grouping: transactions.filter { $0.externalID != nil }, by: { $0.externalID ?? "" }).values where group.count > 1 {
-            group.sorted { $0.id.uuidString < $1.id.uuidString }.dropFirst().forEach { context.delete($0); changed = true }
+        // Two devices can import the same bank transaction before iCloud syncs: keep one per bank id, preferring the
+        // copy whose job other records point at (Nets, expenses, tax set-asides), so those links aren't orphaned.
+        let duplicateGroups = Dictionary(grouping: transactions.filter { $0.externalID != nil }, by: { $0.externalID ?? "" }).values.filter { $0.count > 1 }
+        if !duplicateGroups.isEmpty {
+            var references: [UUID: Int] = [:]
+            for tx in transactions { if let job = tx.jobID { references[job, default: 0] += 1 } }
+            for allocation in allocations { if let job = UUID(uuidString: allocation.target) { references[job, default: 0] += 1 } }
+            // A copy's own jobID counts once for itself; anything above that is another record linking to it.
+            func links(_ tx: Transaction) -> Int { tx.jobID.map { (references[$0] ?? 0) - 1 } ?? 0 }
+            for group in duplicateGroups {
+                group.sorted { (-links($0), $0.id.uuidString) < (-links($1), $1.id.uuidString) }.dropFirst().forEach { context.delete($0); changed = true }
+            }
         }
         // Each device may create money-tool settings before iCloud delivers the other's: fold them into the oldest.
         // Two devices can each decide a job's tax set-aside before syncing: keep one decision per job, a set-aside

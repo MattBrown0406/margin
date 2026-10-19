@@ -53,7 +53,7 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
   return http.createServer(async (req, res) => {
     try {
       const { pathname } = new URL(req.url || '/', 'http://localhost');
-      if (req.method === 'GET' && pathname === '/privacy') { const page = privacyPolicyHtml; res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(page), 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" }); return res.end(page); }
+      if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/privacy') { const page = privacyPolicyHtml({ appleRevocation: Boolean(appleTokens?.configured) }); res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(page), 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'" }); return res.end(req.method === 'HEAD' ? undefined : page); }
       if (req.method === 'GET' && pathname === '/health') return json(res, 200, { ok: true, plaidEnvironment: config.plaidEnv, credentialsConfigured: Boolean(config.plaidClientId && config.plaidSecret) });
       if (req.method === 'POST' && pathname === '/v1/auth/apple') {
         if (!apple || !config.appleBundleId || !config.jwtSecret || config.jwtSecret.length < 32) throw httpError(503, 'Sign in with Apple is not configured');
@@ -96,7 +96,7 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         // (still billed by Plaid but impossible to disconnect).
         // saveItem refuses once this session has ended (401) or while the account is being deleted (409); the
         // new Item is then removed at Plaid so nothing billed is left behind.
-        try { await store.saveItem(userId, { itemId: exchanged.item_id, accessToken: exchanged.access_token, institutionName, accounts: [] }, session.gen); }
+        try { await store.saveItem(userId, { itemId: exchanged.item_id, accessToken: exchanged.access_token, institutionName, accounts: [] }, session.gen, { maxItems: MAX_BANK_CONNECTIONS }); }
         catch (error) { try { await plaid.remove(exchanged.access_token); } catch (removeError) { warn('Could not remove an unsaved Plaid Item', removeError); } throw error; }
         let accounts = [];
         try { accounts = (await plaid.accounts(exchanged.access_token)).accounts.map(mapAccount); await store.updateItem(userId, exchanged.item_id, { accounts }); }
@@ -132,11 +132,11 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
       if (req.method === 'DELETE' && pathname === '/v1/account') {
         // Resumable: until the last step the session stays valid, so after any failure the client retries this DELETE.
         // a) Mark the account as being deleted: saveItem now refuses (409) and a racing link is removed at Plaid.
-        await store.beginDeletion(userId, session.gen);
+        const deletion = await store.beginDeletion(userId, session.gen);
         // b) Revoke every Item at Plaid; a non-recoverable failure stops here with the remaining Items kept.
         // If it stops, the account is unmarked so an abandoned deletion doesn't block new links; a retry marks it again.
         try { for (const itemId of Object.keys((await store.getUser(userId)).items)) await disconnect(userId, itemId); }
-        catch (error) { await store.cancelDeletion(userId).catch(() => {}); throw error; }
+        catch (error) { await store.cancelDeletion(userId, deletion).catch(() => {}); throw error; }
         // c) Revoke the Apple refresh token; on failure it is queued for retryPendingAppleRevocations, never lost.
         if (appleTokens?.configured) {
           try { const refreshToken = await store.getAppleRefreshToken(userId); if (refreshToken) await appleTokens.revoke(refreshToken); }
@@ -144,7 +144,7 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         }
         // d) One atomic step: refuses (409) if an Item is still stored, else deletes the user and ends every session.
         try { await store.deleteUser(userId); }
-        catch (error) { await store.cancelDeletion(userId).catch(() => {}); throw error; }
+        catch (error) { await store.cancelDeletion(userId, deletion).catch(() => {}); throw error; }
         return json(res, 200, { deleted: true });
       }
       if (req.method === 'DELETE' && pathname === '/v1/session') {

@@ -5,7 +5,7 @@ services:
     name: margin-bank
     runtime: node
     rootDir: backend
-    # A persistent disk needs a paid instance; the service keeps its encrypted data in one file on that disk.
+    # A persistent disk needs a paid instance; the service keeps its data (bank access tokens encrypted) in one file on that disk.
     plan: starter
     buildCommand: npm ci --omit=dev
     startCommand: npm start
@@ -45,3 +45,11 @@ services:
       # Sign in with Apple: identity tokens must be issued to this app.
       - key: APPLE_BUNDLE_ID
         value: com.mattbrown.margin
+      # Sign in with Apple token revocation on account deletion (App Review 5.1.1(v)): a Sign in with Apple key (.p8)
+      # from developer.apple.com > Keys. Set these before real users sign in: a sign-in made without them can't be revoked later.
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
