@@ -36,6 +36,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         # HTTPS only: exempt from export-compliance paperwork.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.finance
         INFOPLIST_FILE: ios/Margin/Info.plist
         # Read by the app via Info.plist; replace with the HTTPS bank-service URL.
         MARGIN_API_BASE_URL: "https://margin-bank.onrender.com"
