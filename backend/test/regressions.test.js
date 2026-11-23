@@ -257,3 +257,14 @@ test('a restarted incremental sync restores earlier committed amounts and remova
   const final = await resumed.applySync('u', 'i', { ...page, cursor: 'final', startCursor: 'part2', restarted: true });
   assert.deepEqual(Object.fromEntries(final.transactions.map(row => [row.transaction_id, row.amount])), { A: 10, B: 20 });
 });
+
+test('transaction sync preserves balances from each page and applies the latest balance for each account', async () => {
+  const client = new PlaidClient({});
+  const account = (account_id, current) => ({ account_id, balances: { current } });
+  client.syncPage = async (_, cursor) => ({
+    added: [], modified: [], removed: [], next_cursor: cursor ? 'end' : 'page2', has_more: !cursor,
+    accounts: cursor ? [account('savings', 75)] : [account('checking', 20), account('savings', 70)],
+  });
+  const result = await client.syncAll('token', null);
+  assert.deepEqual(result.accounts, [account('checking', 20), account('savings', 75)]);
+});
