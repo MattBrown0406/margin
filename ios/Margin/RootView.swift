@@ -31,7 +31,7 @@ struct RootView: View {
         }
         .tint(.marginInk)
         .onChange(of: selectedTab) { previous, value in if value == 2 { showAdd = true; selectedTab = previous } }
-        .sheet(isPresented: $showAdd) { AddEntryView(categories: categories, transactions: transactions) }
+        .sheet(isPresented: $showAdd) { AddEntryView(transactions: transactions) }
         .task { seedAndMigrateIfNeeded() }
         // iCloud can deliver another device's starter budget after this one seeded its own.
         .onChange(of: categories.count) { removeSyncDuplicates() }
@@ -676,7 +676,8 @@ struct TransactionRow: View {
 
 struct AddEntryView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
-    let categories: [BudgetCategory]
+    @Query private var categories: [BudgetCategory]
+    @State private var saveError: String?
     let transactions: [Transaction]
     @Query private var rules: [MerchantRule]
     @State private var type = 0
@@ -702,7 +703,12 @@ struct AddEntryView: View {
             Section("Expense") { TextField("Merchant or description", text: $title); TextField("Amount", text: $amount).keyboardType(.decimalPad); DatePicker("Date", selection: $date, displayedComponents: .date) }
             Section("Ledger") {
                 Picker("Account", selection: $scope) { Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented)
-                Picker("Category", selection: Binding(get: { category }, set: { category = $0; categoryPicked = true })) { ForEach(categoryOptions, id: \.self) { Text($0).tag($0) } }
+                if categoryOptions.isEmpty {
+                    Text("Your categories will appear when your existing budget syncs. If you’re starting fresh, choose a starter budget to log this expense.").font(.caption)
+                    Button("Use the starter budget") { StarterBudget.insert(into: context) }
+                } else {
+                    Picker("Category", selection: Binding(get: { category }, set: { category = $0; categoryPicked = true })) { ForEach(categoryOptions, id: \.self) { Text($0).tag($0) } }
+                }
                 if scope == "personal" { Toggle("This was necessary", isOn: $essential) }
                 if scope == "business", !recentJobs.isEmpty {
                     Picker("For job", selection: $jobID) {
@@ -718,7 +724,11 @@ struct AddEntryView: View {
         Section { Button("Save entry") { saveEntry() }.frame(maxWidth: .infinity).bold().disabled(!canSave) }
     }.numberPadDone().navigationTitle(type == 0 ? "Add expense" : "Log intervention income").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         .onAppear(perform: resetCategoryIfNeeded).onChange(of: scope) { resetCategoryIfNeeded(); applyRememberedCategory() }
+        .onChange(of: personalCategoryNames) { resetCategoryIfNeeded(); applyRememberedCategory() }
         .onChange(of: title) { applyRememberedCategory() }
+        .alert("Couldn’t save entry", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK") { saveError = nil }
+        } message: { Text(saveError ?? "") }
     } }
     /// Keeps the category valid for the chosen ledger, so a business expense can't be saved as "Groceries".
     /// A category the app had to replace (switching ledgers) isn't the person's choice any more.
@@ -731,14 +741,23 @@ struct AddEntryView: View {
     private func saveEntry() {
         guard canSave else { return }
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if type == 0, let value = Double(moneyInput: amount) {
-            context.insert(Transaction(title: name, amount: value, date: date, category: category, isEssential: scope == "personal" ? essential : true, ledgerScope: scope, jobID: scope == "business" ? jobID : nil))
-            MerchantRule.learn(title: name, scope: scope, category: category, rules: rules, in: context)
-        } else if let grossValue = Double(moneyInput: gross) {
-            let jobID = UUID()
-            context.insert(Transaction(title: name, amount: grossValue, date: grossDate, category: "Intervention income", isIncome: true, ledgerScope: "business", incomeKind: "gross", jobID: jobID))
-            if let netValue = Double(moneyInput: net) { context.insert(Transaction(title: name, amount: netValue, date: netDate, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: jobID)) }
+        // Commit this entry and its learned rule together. A failed save can be retried
+        // without leaving duplicate pending inserts in the app's shared context.
+        let writer = ModelContext(context.container)
+        writer.autosaveEnabled = false
+        do {
+            if type == 0, let value = Double(moneyInput: amount) {
+                writer.insert(Transaction(title: name, amount: value, date: date, category: category, isEssential: scope == "personal" ? essential : true, ledgerScope: scope, jobID: scope == "business" ? jobID : nil))
+                MerchantRule.learn(title: name, scope: scope, category: category, rules: try writer.fetch(FetchDescriptor<MerchantRule>()), in: writer)
+            } else if let grossValue = Double(moneyInput: gross) {
+                let jobID = UUID()
+                writer.insert(Transaction(title: name, amount: grossValue, date: grossDate, category: "Intervention income", isIncome: true, ledgerScope: "business", incomeKind: "gross", jobID: jobID))
+                if let netValue = Double(moneyInput: net) { writer.insert(Transaction(title: name, amount: netValue, date: netDate, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: jobID)) }
+            }
+            try writer.save()
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
         }
-        try? context.save(); dismiss()
     }
 }
