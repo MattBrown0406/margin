@@ -356,6 +356,7 @@ private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "
         // confirmed paid
         let paid = CashFlowForecast.expectedNet(open: [], paid: [(booking, job)], entries: entries, calendar: calendar)
         let m = CashFlowForecast.months(entries: entries, booked: open, plannedMonthly: 6000, now: now, count: 1, calendar: calendar)
+        #expect(paid == open)
         #expect(m[0].receivedNet + m[0].expectedNet == 6000)   // truth: 1000 in + 5000 still to transfer
     }
 
@@ -404,6 +405,7 @@ private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "
         let exp = CashFlowForecast.expectedNet(open: [a, b], paid: [], entries: entries, calendar: calendar)
         let m = CashFlowForecast.months(entries: entries, booked: exp, plannedMonthly: 0, now: now, count: 1, calendar: calendar)
         #expect(likely[b.id]?.jobID == job)
+        #expect(m[0].receivedNet == 1800 && m[0].expectedNet == 3000)
     }
 
     // 3b. A's exact-amount Gross arrives late, closer to B's date.
