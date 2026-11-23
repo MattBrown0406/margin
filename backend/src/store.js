@@ -24,7 +24,7 @@ const own = (object, key) => (object && Object.hasOwn(object, key) ? object[key]
 const writableKey = key => { if (typeof key !== 'string' || !key || key in Object.prototype) throw Object.assign(new Error('Invalid id'), { status: 400 }); return key; };
 // Only what the app is shown is kept (see mapTransaction in app.js); Plaid's location, payment and counterparty
 // details are dropped. The privacy policy lists these fields.
-const storedFields = t => ({ transaction_id: t.transaction_id, account_id: t.account_id, merchant_name: t.merchant_name ?? null, name: t.name ?? null, amount: t.amount, date: t.date, authorized_date: t.authorized_date ?? null, pending: Boolean(t.pending), personal_finance_category: t.personal_finance_category?.primary ? { primary: t.personal_finance_category.primary } : null });
+const storedFields = t => ({ transaction_id: t.transaction_id, account_id: t.account_id, merchant_name: t.merchant_name ?? null, name: t.name ?? null, amount: t.amount, iso_currency_code: t.iso_currency_code ?? undefined, unofficial_currency_code: t.unofficial_currency_code ?? undefined, date: t.date, authorized_date: t.authorized_date ?? null, pending: Boolean(t.pending), personal_finance_category: t.personal_finance_category?.primary ? { primary: t.personal_finance_category.primary } : null });
 const newUser = () => ({ items: {}, transactions: {} });
 const generationOf = (data, userId) => { const value = own(data.sessionGenerations, userId); return Number.isSafeInteger(value) && value >= 0 ? value : 0; };
 const deletingError = () => Object.assign(new Error('Account is being deleted'), { status: 409 });

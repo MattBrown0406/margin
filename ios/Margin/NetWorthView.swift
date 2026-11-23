@@ -17,13 +17,14 @@ struct NetWorthView: View {
 
     private static let assetTypes: Set<String> = ["depository", "investment", "brokerage"]
     private static let debtTypes: Set<String> = ["credit", "loan"]
-    private var connectedAccounts: [BankAccountDTO] { bank.connections.flatMap(\.accounts) }
+    private var connectedAccounts: [BankAccountDTO] { bank.connections.flatMap(\.accounts).filter { $0.currency == "USD" } }
     private var connectedAssets: [BankAccountDTO] { connectedAccounts.filter { Self.assetTypes.contains($0.type) } }
     /// Connected cards and loans the payoff plan doesn't already follow.
     private var connectedDebts: [BankAccountDTO] {
         let linked = Set(debts.compactMap(\.linkedAccountID))
         return connectedAccounts.filter { Self.debtTypes.contains($0.type) && !linked.contains($0.id) }
     }
+    private var missingBalances: Bool { (connectedAssets + connectedDebts).contains { $0.currentBalance == nil } }
     private var assetsTotal: Double { assets.reduce(0) { $0 + $1.value } + connectedAssets.reduce(0) { $0 + ($1.currentBalance ?? 0) } }
     private var debtsTotal: Double { debts.reduce(0) { $0 + max(0, $1.balance) } + connectedDebts.reduce(0) { $0 + max(0, $1.currentBalance ?? 0) } }
 
@@ -32,9 +33,9 @@ struct NetWorthView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("NET WORTH").font(.caption.bold()).foregroundStyle(.secondary)
+                    Text(missingBalances ? "KNOWN NET WORTH" : "NET WORTH").font(.caption.bold()).foregroundStyle(.secondary)
                     Text((assetsTotal - debtsTotal).money).font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(assetsTotal - debtsTotal < 0 ? Color.marginCoral : .primary)
-                    if let change = monthChange { Text("\(change >= 0 ? "Up" : "Down") \(abs(change).money) since \(previousSnapshot?.monthStart.formatted(.dateTime.month(.wide)) ?? "last month")").font(.subheadline).foregroundStyle(change >= 0 ? Color.green : Color.marginCoral) }
+                    if !missingBalances, let change = monthChange { Text("\(change >= 0 ? "Up" : "Down") \(abs(change).money) since \(previousSnapshot?.monthStart.formatted(.dateTime.month(.wide)) ?? "last month")").font(.subheadline).foregroundStyle(change >= 0 ? Color.green : Color.marginCoral) }
                 }.padding(.vertical, 4)
                 HStack { ReportMetric(label: "OWN", value: assetsTotal); ReportMetric(label: "OWE", value: debtsTotal) }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             }
@@ -54,7 +55,7 @@ struct NetWorthView: View {
                     Button { editing = asset } label: { HStack { Label(asset.name, systemImage: Self.icon(asset.kind)); Spacer(); Text(asset.value.money).bold() } }.buttonStyle(.plain)
                 }.onDelete { offsets in offsets.map { assets[$0] }.forEach(context.delete); try? context.save() }
                 ForEach(connectedAssets) { account in
-                    HStack { Label(account.name, systemImage: "building.columns"); Text("•••• \(account.mask)").font(.caption).foregroundStyle(.secondary); Spacer(); Text((account.currentBalance ?? 0).money).bold() }
+                    HStack { Label(account.name, systemImage: "building.columns"); Text("•••• \(account.mask)").font(.caption).foregroundStyle(.secondary); Spacer(); Text(account.balanceText).bold() }
                 }
                 Button { adding = true } label: { Label("Add something you own", systemImage: "plus.circle.fill") }
             } header: { Text("Own") } footer: { Text("Cash, savings, retirement, home, vehicles. Connected bank balances update when this screen opens.") }
@@ -64,29 +65,35 @@ struct NetWorthView: View {
                 }
                 ForEach(connectedDebts) { account in
                     VStack(alignment: .leading, spacing: 6) {
-                        HStack { Label(account.name, systemImage: "building.columns"); Spacer(); Text((account.currentBalance ?? 0).money).bold() }
+                        HStack { Label(account.name, systemImage: "building.columns"); Spacer(); Text(account.balanceText).bold() }
                         let unlinked = debts.filter { $0.linkedAccountID == nil }
-                        if unlinked.isEmpty { Button("Add to my payoff plan") { track(account) }.font(.caption.bold()) }
+                        if unlinked.isEmpty { Button("Add to my payoff plan") { track(account) }.font(.caption.bold()).disabled(account.currentBalance == nil) }
                         else {
                             Menu("Add to my payoff plan") {
                                 // A debt already entered by hand: link it instead of counting it twice.
                                 ForEach(unlinked) { debt in Button("It’s my \(debt.name)") { link(debt, to: account) } }
-                                Button("Add as a new debt") { track(account) }
+                                Button("Add as a new debt") { track(account) }.disabled(account.currentBalance == nil)
                             }.font(.caption.bold())
                         }
                     }
                 }
                 NavigationLink("Debt payoff plan") { DebtPayoffView() }
             } header: { Text("Owe") }
+            if bank.connections.flatMap(\.accounts).contains(where: { $0.currency != "USD" }) {
+                Section { Text("Totals use USD. Accounts in other currencies are shown under Bank accounts.").font(.caption) }
+            }
+            if missingBalances { Section { Text("A connected balance is unavailable. This month’s snapshot will update when it returns.").font(.caption) } }
             if let error = bank.errorMessage { Section { Text(error).font(.caption).foregroundStyle(.secondary) } }
         }
         .numberPadDone().navigationTitle("Net worth")
         .task {
+            balancesKnown = false
+            let wasConfigured = bank.isConfigured
             await bank.load()
             // Without a working bank connection, connected balances are unknown: show what's known but don't record it
             // (unless nothing here depends on the bank).
             let loaded = bank.isConfigured && bank.errorMessage == nil
-            balancesKnown = loaded || (!bank.isConfigured && debts.allSatisfy { $0.linkedAccountID == nil })
+            balancesKnown = loaded || (!wasConfigured && debts.allSatisfy { $0.linkedAccountID == nil })
             if loaded { followBankBalances() }
             recordSnapshot(into: removeDuplicateSnapshots())
         }
@@ -122,7 +129,8 @@ struct NetWorthView: View {
         try? context.save()
     }
     private func track(_ account: BankAccountDTO) {
-        context.insert(Debt(name: account.name, kind: account.type == "loan" ? "loan" : "card", balance: max(0, account.currentBalance ?? 0), apr: 0, minimumPayment: 0,
+        guard let balance = account.currentBalance else { return }
+        context.insert(Debt(name: account.name, kind: account.type == "loan" ? "loan" : "card", balance: max(0, balance), apr: 0, minimumPayment: 0,
                             customRank: (debts.map(\.customRank).max() ?? -1) + 1, linkedAccountID: account.id))
         try? context.save()
     }
@@ -143,7 +151,7 @@ struct NetWorthView: View {
     /// Keeps one snapshot for this month, updated to the latest totals.
     private func recordSnapshot(into current: NetWorthSnapshot?) {
         let owned = assetsTotal, owed = debtsTotal
-        guard balancesKnown, owned > 0 || owed > 0 else { return }
+        guard balancesKnown, !missingBalances, current != nil || !snapshots.isEmpty || owned != 0 || owed != 0 else { return }
         if let snapshot = current {
             guard abs(snapshot.assets - owned) > 0.005 || abs(snapshot.debts - owed) > 0.005 else { return }
             snapshot.assets = owned; snapshot.debts = owed; snapshot.updatedAt = .now

@@ -265,7 +265,7 @@ struct PlanView: View {
     @Query private var financeSettings: [FinanceSettings]
     @Query private var allocations: [NetAllocation]
     @State private var section = 0
-    private var netIncome: Double { month.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" }.reduce(0) { $0 + $1.amount } }
+    private var netIncome: Double { NetAssignment.monthNet(transactions) }
     private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var planned: Double { categories.reduce(0) { $0 + $1.monthlyLimit } }
     /// NET INCOME includes late-last-month Net still unassigned (it funds this month); PLANNED is what the plan needs

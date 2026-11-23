@@ -222,10 +222,11 @@ test('stored transactions keep only the fields the app is shown', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'margin-slim-')), file = path.join(dir, 'data.json'), store = new FileStore(file, 'a'.repeat(64));
   try {
     await store.saveItem('apple:u', { itemId: 'item', accessToken: 'tok', institutionName: 'Bank' }, 0);
-    const raw = { transaction_id: 't1', account_id: 'acc', merchant_name: 'Cafe', name: 'CAFE 123', amount: 4.5, date: '2026-10-01', authorized_date: '2026-09-30', pending: false, personal_finance_category: { primary: 'FOOD_AND_DRINK', detailed: 'FOOD_AND_DRINK_COFFEE' }, location: { address: '1 Main St' }, payment_meta: { payee: 'Someone' }, counterparties: [{ name: 'Cafe' }] };
+    const raw = { iso_currency_code: 'CAD', transaction_id: 't1', account_id: 'acc', merchant_name: 'Cafe', name: 'CAFE 123', amount: 4.5, date: '2026-10-01', authorized_date: '2026-09-30', pending: false, personal_finance_category: { primary: 'FOOD_AND_DRINK', detailed: 'FOOD_AND_DRINK_COFFEE' }, location: { address: '1 Main St' }, payment_meta: { payee: 'Someone' }, counterparties: [{ name: 'Cafe' }] };
     await store.applySync('apple:u', 'item', { added: [raw], modified: [], removed: [], cursor: 'c1', hasMore: false });
     const stored = JSON.parse(await fs.readFile(file, 'utf8')).users['apple:u'].transactions.t1;
-    assert.deepEqual(Object.keys(stored).sort(), ['account_id', 'amount', 'authorized_date', 'date', 'margin_item_id', 'merchant_name', 'name', 'pending', 'personal_finance_category', 'transaction_id']);
+    assert.deepEqual(Object.keys(stored).sort(), ['account_id', 'amount', 'authorized_date', 'date', 'iso_currency_code', 'margin_item_id', 'merchant_name', 'name', 'pending', 'personal_finance_category', 'transaction_id']);
+    assert.equal(stored.iso_currency_code, 'CAD');
     assert.deepEqual(stored.personal_finance_category, { primary: 'FOOD_AND_DRINK' });
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });

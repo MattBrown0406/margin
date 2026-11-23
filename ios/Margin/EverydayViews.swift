@@ -38,8 +38,7 @@ struct TransactionEditView: View {
         guard tx.incomeKind == "net", tx.ledgerScope == "personal", let value else { return nil }
         // The Net transfers as they'd be after saving, run through the same rules Assign Net uses.
         let nets = NetAssignment.personalNets(transactions.filter { $0.id != tx.id }) + [(date: date, amount: value)]
-        let calendar = Calendar.current
-        let available = nets.filter { calendar.isDate($0.date, equalTo: .now, toGranularity: .month) }.reduce(0) { $0 + $1.amount }
+        let available = NetAssignment.monthNet(nets)
             + NetAssignment.carriedIn(nets: nets, allocations: allocations)
         let gap = NetAssignment.assignedThisMonth(allocations).reduce(0) { $0 + $1.amount } - available
         return gap > 0.5 ? gap : nil

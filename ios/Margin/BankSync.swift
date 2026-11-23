@@ -15,6 +15,7 @@ struct BankAccountDTO: Codable, Identifiable {
     let currentBalance: Double?
     let availableBalance: Double?
     let currency: String
+    var balanceText: String { currentBalance.map { $0.formatted(.currency(code: currency)) } ?? "Unavailable" }
 }
 struct BankConnectionDTO: Codable, Identifiable {
     var id: String { itemId }
@@ -30,6 +31,7 @@ struct ImportedBankTransaction: Codable, Identifiable {
     let accountId: String
     let name: String
     let amount: Double
+    let currency: String?
     let date: String
     let pending: Bool
     let category: String
@@ -51,11 +53,22 @@ private struct SyncResponse: Codable { let added: Int; let modified: Int; let re
 
     /// Set while Plaid Link runs in update mode to repair an existing connection's login.
     private var repairingItemID: String?
+    private var loadedSession: String?
 
     func load() async {
         objectWillChange.send()   // sign-in state may have changed while this screen was hidden
-        guard let api else { return }
-        await work { self.connections = try await api.request("/v1/plaid/accounts", as: ConnectionsResponse.self).connections }
+        let currentAPI = api
+        if loadedSession != currentAPI?.sessionToken {
+            connections = []; reviewTransactions = []; errorMessage = nil
+            loadedSession = currentAPI?.sessionToken
+        }
+        guard let currentAPI else { return }
+        await work {
+            let latest = try await currentAPI.request("/v1/plaid/accounts", as: ConnectionsResponse.self)
+            guard currentAPI.sessionToken == self.api?.sessionToken else { return }
+            self.connections = latest.connections
+        }
+        if api == nil { connections = []; reviewTransactions = [] }
     }
     func beginLink(repairing connection: BankConnectionDTO? = nil) async {
         guard let api else { errorMessage = "Sign in with Apple in Settings before connecting a bank."; return }
@@ -155,7 +168,7 @@ struct BankAccountsView: View {
                         }
                         ForEach(connection.accounts) { account in
                             VStack(alignment: .leading, spacing: 7) {
-                                HStack { VStack(alignment: .leading) { Text(account.name).bold(); Text("•••• \(account.mask) · \(account.subtype ?? account.type)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text((account.currentBalance ?? 0).money).bold() }
+                                HStack { VStack(alignment: .leading) { Text(account.name).bold(); Text("•••• \(account.mask) · \(account.subtype ?? account.type)").font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(account.balanceText).bold() }
                                 Picker("Ledger", selection: Binding(get: { accountScope(account.id) }, set: { setAccountScope(account.id, $0) })) {
                                     Text("Personal").tag("personal"); Text("Business").tag("business")
                                 }.pickerStyle(.segmented)
@@ -173,7 +186,10 @@ struct BankAccountsView: View {
                         VStack(alignment: .leading, spacing: 9) {
                             HStack {
                                 VStack(alignment: .leading) { Text(tx.name).bold(); Text("\(tx.date)\(tx.pending ? " · Pending" : "")").font(.caption).foregroundStyle(.secondary) }
-                                Spacer(); Text((tx.amount < 0 ? "+" : "") + abs(tx.amount).moneyExact).bold()
+                                Spacer(); Text((tx.amount < 0 ? "+" : "") + abs(tx.amount).formatted(.currency(code: currency(of: tx)))).bold()
+                            }
+                            if currency(of: tx) != "USD" {
+                                Text("The ledger uses USD. Enter the converted amount manually.").font(.caption)
                             }
                             if let match = possibleDuplicate(of: tx) {
                                 Label("Possible duplicate of “\(match.title)” on \(match.date.formatted(date: .abbreviated, time: .omitted))", systemImage: "doc.on.doc").font(.caption.bold()).foregroundStyle(.orange)
@@ -214,7 +230,7 @@ struct BankAccountsView: View {
                             HStack {
                                 Button("Skip") { skip(tx) }.buttonStyle(.bordered)
                                 Spacer()
-                                Button("Import") { importTransaction(tx) }.buttonStyle(.borderedProminent).tint(.marginInk).disabled(tx.pending)
+                                Button("Import") { importTransaction(tx) }.buttonStyle(.borderedProminent).tint(.marginInk).disabled(tx.pending || currency(of: tx) != "USD")
                             }
                         }.marginCard()
                     }
@@ -292,8 +308,11 @@ struct BankAccountsView: View {
     private func skip(_ tx: ImportedBankTransaction) {
         if let data = try? JSONEncoder().encode(Array(skippedIDs.union([tx.id])).sorted()), let value = String(data: data, encoding: .utf8) { skippedJSON = value }
     }
+    private func currency(of tx: ImportedBankTransaction) -> String {
+        tx.currency ?? model.connections.flatMap(\.accounts).first { $0.id == tx.accountId }?.currency ?? "USD"
+    }
     private func importTransaction(_ imported: ImportedBankTransaction) {
-        guard !imported.pending, !existing.contains(where: { $0.externalID == imported.id }) else { return }
+        guard !imported.pending, currency(of: imported) == "USD", !existing.contains(where: { $0.externalID == imported.id }) else { return }
         let creditKind = imported.amount < 0 ? reviewIncomeKind(imported) : nil
         let date = bankDay(imported.date) ?? .now
         let tx: Transaction

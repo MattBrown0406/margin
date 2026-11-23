@@ -74,6 +74,15 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
 }
 
 @Suite struct ForecastTests {
+    @Test func scheduledTransfersAreExpectedUntilTheirLocalDayArrives() {
+        let entries = [net(100, day(2026, 9, 10, 18)), net(900, day(2026, 9, 11)), net(250, day(2026, 10, 1))]
+        let forecast = CashFlowForecast.months(entries: entries, booked: [], plannedMonthly: 1000,
+                                              now: day(2026, 9, 10), count: 2, calendar: calendar)
+        #expect(forecast.map(\.inHand) == [100, 0])
+        #expect(forecast.map(\.expectedNet) == [900, 250])
+        #expect(forecast.map(\.gap) == [0, -750])
+    }
+
     let now = day(2026, 10, 4)
 
     @Test func combinesReceivedAndBookedNetAndCarriesOverdueJobsIntoThisMonth() {
