@@ -236,6 +236,22 @@ private func near(_ a: Double, _ b: Double, _ tolerance: Double = 0.01) -> Bool 
         #expect(near(EstimatedTax.plan(report: report(gross: 60_000, expenses: 20_000), profile: profile, paidFederal: 0, paidState: 0, reserve: 0, now: now, calendar: utc).minimumFederal, 9900))
     }
 
+    @Test func anOverpaymentToOneTaxAuthorityCannotCoverTheOther() {
+        var profile = TaxProfile()
+        profile.stateRate = 5
+        func plan(federal: Double, state: Double) -> EstimatedTaxPlan {
+            EstimatedTax.plan(report: report(gross: 50_000, expenses: 0), profile: profile, paidFederal: federal,
+                              paidState: state, reserve: 100, now: d(2026, 12, 31), calendar: utc)
+        }
+        let federalOverpayment = plan(federal: 100_000, state: 0)
+        #expect(near(federalOverpayment.stillToSave, federalOverpayment.estimate.stateTax - 100))
+        #expect(!federalOverpayment.isPaid(through: 1))
+        let stateOverpayment = plan(federal: 0, state: 100_000)
+        #expect(near(stateOverpayment.stillToSave, stateOverpayment.recommendedFederal - 100))
+        #expect(!stateOverpayment.isPaid(through: 1))
+        #expect(plan(federal: 100_000, state: 100_000).isPaid(through: 4))
+    }
+
     @Test func underAThousandOwedHasNoPenalty() {
         let plan = EstimatedTax.plan(report: report(gross: 6_000, expenses: 0), profile: TaxProfile(), paidFederal: 0, paidState: 0, reserve: 0, now: d(2027, 1, 1, 0), calendar: utc)
         #expect(plan.recommendedFederal > 0 && plan.recommendedFederal < 1000)
@@ -313,6 +329,21 @@ private func near(_ a: Double, _ b: Double, _ tolerance: Double = 0.01) -> Bool 
         #expect(RecurringDetector.merchantKey("NETFLIX.COM 866-579") == "netflix")
         #expect(RecurringDetector.merchantKey("Netflix") == "netflix")
         #expect(RecurringDetector.merchantKey("POS DEBIT 1234") == "")
+    }
+
+    @Test func oneMerchantCanHaveTwoIndependentSubscriptions() {
+        let personal = (1...3).map { charge("Cloud", 9, d(2026, $0, 15)) }
+        let business = personal.map { row in
+            var copy = row; copy.amount = 49; copy.ledgerScope = "business"; return copy
+        }
+        let entries = business + personal
+        let now = d(2026, 3, 16)
+        let found = RecurringDetector.detect(entries: entries, now: now, calendar: utc)
+        #expect(found.map(\.typicalAmount).sorted() == [9, 49])
+        #expect(Set(found.map(\.id)).count == 2)
+        let kept = RecurringDetector.detect(entries: entries, now: now, ignoredKeys: ["business|cloud"], calendar: utc)
+        #expect(kept.map(\.ledgerScope) == ["personal"])
+        #expect(RecurringDetector.detect(entries: entries, now: now, ignoredKeys: ["cloud"], calendar: utc).isEmpty)
     }
 
     @Test func findsMonthlyAndQuarterlyChargesAndPriceIncreases() {

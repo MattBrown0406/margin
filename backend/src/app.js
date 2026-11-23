@@ -119,7 +119,14 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         // An update cut off at the page cap resumes from its cursor but restarts from where that update began.
         try { synced = await plaid.syncAll(accessToken, startCursor, 'paginationStart' in item ? item.paginationStart : startCursor); }
         catch (error) { if (error.code === 'ITEM_LOGIN_REQUIRED') await store.updateItem(userId, itemId, { requiresAttention: true }); throw error; }
-        const result = await store.applySync(userId, itemId, { ...synced, startCursor, accounts: synced.accounts?.map(mapAccount) });
+        // Transaction pages list only accounts with activity. Refresh the complete inventory at
+        // the end of a sync so an idle savings or investment account stays in net worth.
+        let accounts = synced.accounts?.map(mapAccount), completeAccounts = false;
+        if (!synced.hasMore) {
+          try { accounts = (await plaid.accounts(accessToken)).accounts.map(mapAccount); completeAccounts = true; }
+          catch { /* Keep the complete cached list and apply any balances from the pages. */ }
+        }
+        const result = await store.applySync(userId, itemId, { ...synced, startCursor, accounts, completeAccounts });
         const transactions = result.transactions.map(mapTransaction).sort((a, b) => String(b.date).localeCompare(String(a.date)));
         return json(res, 200, { added: result.added, modified: result.modified, removed: result.removed, hasMore: result.hasMore, accounts: result.accounts, transactions });
       }

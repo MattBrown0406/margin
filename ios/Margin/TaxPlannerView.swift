@@ -73,7 +73,7 @@ private struct TaxPlanSections: View {
 
         Section {
             ForEach(plan.installments) { installment in
-                let paidThrough = plan.paidFederal + plan.paidState >= plan.installments.filter { $0.quarter <= installment.quarter }.reduce(0) { $0 + $1.federal + $1.state } - 0.5
+                let paidThrough = plan.isPaid(through: installment.quarter)
                 HStack {
                     VStack(alignment: .leading) {
                         Text("Q\(installment.quarter) · \(installment.dueDate.formatted(date: .abbreviated, time: .omitted))").font(.subheadline.bold())

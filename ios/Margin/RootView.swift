@@ -386,7 +386,7 @@ struct InterventionIncomeView: View {
             HStack { VStack(alignment: .leading) { Text(job.title).font(.headline); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(job.amount.money).bold() }
             let spentOnJob = transactions.filter { !$0.isIncome && $0.ledgerScope == "business" && $0.jobID != nil && $0.jobID == job.jobID }.reduce(0) { $0 + $1.amount }
             if spentOnJob != 0 {
-                HStack { Text("Job expenses \(spentOnJob.money)"); Spacer(); Text("Profit \((job.amount - spentOnJob).money)\(job.amount > 0 ? " · \(Int(((job.amount - spentOnJob) / job.amount * 100).rounded()))%" : "")").bold() }
+                HStack { Text("Job expenses \(spentOnJob.money)"); Spacer(); Text("Profit \((job.amount - spentOnJob).money)\(job.amount > 0 ? " · \(((job.amount - spentOnJob) / job.amount).wholePercent)" : "")").bold() }
                     .font(.caption).foregroundStyle(.secondary)
             }
             JobTaxSetAsideRow(job: job, decisions: job.jobID.flatMap { decisions[$0.uuidString] } ?? [], rate: rates[JobTaxSetAside.year(of: job)] ?? 0)
@@ -606,7 +606,7 @@ struct JobProfitCard: View {
                 Text("When a job pays, tag its business expenses to it (Add › Business › For job) to see what each one really earned.").font(.subheadline).foregroundStyle(.secondary)
             } else {
                 HStack { ReportMetric(label: "AVG PROFIT / JOB", value: totals.averageProfit); ReportMetric(label: "JOB EXPENSES", value: totals.expenses) }
-                if let best = totals.best { Text("Most profitable: \(best.title), \(best.profit.money)\(best.margin.map { " (\(Int(($0 * 100).rounded()))%)" } ?? "")").font(.subheadline) }
+                if let best = totals.best { Text("Most profitable: \(best.title), \(best.profit.money)\(best.margin.map { " (\($0.wholePercent))" } ?? "")").font(.subheadline) }
                 ForEach(jobs.prefix(5)) { job in
                     HStack { VStack(alignment: .leading) { Text(job.title).font(.subheadline.bold()); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }
                         Spacer(); VStack(alignment: .trailing) { Text(job.profit.money).font(.subheadline.bold()); Text("of \(job.gross.money)").font(.caption).foregroundStyle(.secondary) } }
@@ -626,7 +626,7 @@ struct GoalsView: View {
     @State private var editing: SavingsGoal?
     var body: some View { ScrollView { VStack(alignment: .leading, spacing: 18) {
         Text("Goals").font(.largeTitle.bold()); Text("Savings is a promise to your future self.").foregroundStyle(.secondary)
-        ForEach(goals) { goal in VStack(alignment: .leading, spacing: 14) { Image(systemName: goal.icon).font(.title).foregroundStyle(Color.marginInk); Text(goal.name).font(.title2.bold()); Text("\(goal.saved.money) saved of \(goal.target.money)"); ProgressView(value: goal.target > 0 ? min(goal.saved/goal.target, 1) : 1).tint(.marginLime).scaleEffect(y: 2); Text("\(goal.target > 0 ? Int(goal.saved/goal.target*100) : 100)% complete").font(.caption.bold()).foregroundStyle(.secondary)
+        ForEach(goals) { goal in VStack(alignment: .leading, spacing: 14) { Image(systemName: goal.icon).font(.title).foregroundStyle(Color.marginInk); Text(goal.name).font(.title2.bold()); Text("\(goal.saved.money) saved of \(goal.target.money)"); ProgressView(value: goal.target > 0 ? min(goal.saved/goal.target, 1) : 1).tint(.marginLime).scaleEffect(y: 2); Text("\((goal.target > 0 ? goal.saved / goal.target : 1).wholePercent) complete").font(.caption.bold()).foregroundStyle(.secondary)
             Button("Update progress") { editing = goal }.buttonStyle(.bordered).tint(.marginInk) }.marginCard() }
     }.padding() }.background(Color.marginCream.ignoresSafeArea()).navigationBarHidden(true)
         .sheet(item: $editing) { GoalEditView(goal: $0) } }

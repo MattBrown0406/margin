@@ -37,14 +37,21 @@ enum XLSXExporter {
         let grossRows = month.filter { $0.isIncome && $0.incomeKind == "gross" }.sorted { $0.date < $1.date }
         let expenses = month.filter { !$0.isIncome }.sorted { $0.date < $1.date }
         let gross = grossRows.reduce(0) { $0 + $1.amount }
-        let net = month.filter { $0.isIncome && $0.incomeKind == "net" }.reduce(0) { $0 + $1.amount }
+        let netRows = month.filter { $0.isIncome && $0.incomeKind == "net" }.sorted { $0.date < $1.date }
+        let net = netRows.reduce(0) { $0 + $1.amount }
         let businessSpend = expenses.filter { $0.ledgerScope == "business" }.reduce(0) { $0 + $1.amount }
         let personalSpend = expenses.filter { $0.ledgerScope == "personal" }.reduce(0) { $0 + $1.amount }
 
         var incomeRows: [[WorkbookCell]] = [[.text("Date received"), .text("Intervention / job"), .text("Gross received by business"), .text("Net transferred personal"), .text("Transfer date")]]
+        var transfersByJob = Dictionary(grouping: netRows, by: \.jobID)
         for entry in grossRows {
-            let transfers = entry.netTransfers(in: transactions)
+            let transfers = entry.jobID.flatMap { transfersByJob.removeValue(forKey: $0) } ?? []
             incomeRows.append([.text(date(entry.date)), .text(entry.title), .number(entry.amount), transfers.isEmpty ? .text("Not transferred") : .number(transfers.reduce(0) { $0 + $1.amount }), .text(transfers.map { date($0.date) }.joined(separator: ", "))])
+        }
+
+        // Transfers from earlier jobs and standalone bank deposits also fund this month.
+        for transfer in transfersByJob.values.flatMap({ $0 }).sorted(by: { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }) {
+            incomeRows.append([.text(""), .text(transfer.title), .number(0), .number(transfer.amount), .text(date(transfer.date))])
         }
 
         var expenseRows: [[WorkbookCell]] = [[.text("Date"), .text("Ledger"), .text("Description"), .text("Category"), .text("Amount"), .text("Source")]]
@@ -77,7 +84,7 @@ enum XLSXExporter {
         if let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)), let end = calendar.date(byAdding: DateComponents(year: 1, second: -1), to: start) {
             for job in JobProfit.summaries(entries: entries, in: start...end).reversed() {
                 jobRows.append([.text(date(job.date)), .text(job.title), .number(job.gross), .number(job.expenses), .number(job.profit),
-                                job.margin.map { .text("\(Int(($0 * 100).rounded()))%") } ?? .text(""), .number(job.transferred)])
+                                job.margin.map { .text($0.wholePercent) } ?? .text(""), .number(job.transferred)])
             }
         }
         let scheduleC = ScheduleC.report(entries: entries, year: year, calendar: calendar)

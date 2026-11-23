@@ -22,10 +22,10 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
     func parses(text: String, locale: String, expected: Double) { #expect(Double(moneyInput: text, locale: Locale(identifier: locale)) == expected) }
 
     @Test(arguments: ["", "abc", "-5", "0", "0.004", "−3", "Invoice #1042 $750.00", "3 for $10", "1e3", "50¢", "1 2", "1.234,5.6",
-                      "5k", "50 cents", "Invoice 1042", "0,001"])
+                      "5k", "50 cents", "Invoice 1042", "0,001", String(repeating: "9", count: 307)])
     func rejects(text: String) { #expect(Double(moneyInput: text, locale: Locale(identifier: "en_US")) == nil) }
 
-    @Test(arguments: [("USD 40", 40.0), (".50", 0.5), ("1'234.50", 1234.5), ("$ 1,234,567", 1234567), ("€12", 12)])
+    @Test(arguments: [("1.005", 1.01), ("USD 40", 40.0), (".50", 0.5), ("1'234.50", 1234.5), ("$ 1,234,567", 1234567), ("€12", 12)])
     func acceptsCurrencyDecorations(text: String, expected: Double) { #expect(Double(moneyInput: text, locale: Locale(identifier: "en_US")) == expected) }
 }
 

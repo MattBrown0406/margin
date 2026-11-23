@@ -50,16 +50,21 @@ test('an Item is persisted even when the follow-up accounts call fails, so it ca
 });
 
 test('sync returns only the synced Item\'s transactions and refreshes balances', async () => {
-  const plaid = new FakePlaid({ async syncAll(token) { return { cursor: 'c', added: [tx(`tx-${token}`, `acct-${token}`)], modified: [], removed: [], accounts: [{ account_id: `acct-${token}`, name: 'Checking', type: 'depository', mask: '0001', balances: { current: 555 } }] }; } });
+  let initial = true;
+  const plaid = new FakePlaid({ async accounts(token) {
+    if (!initial) throw new Error('balance refresh unavailable');
+    return { accounts: [{ account_id: `idle-${token}`, name: 'Retirement', type: 'investment', balances: { current: 9000 } }] };
+  }, async syncAll(token) { return { cursor: 'c', added: [tx(`tx-${token}`, `acct-${token}`)], modified: [], removed: [], accounts: [{ account_id: `acct-${token}`, name: 'Checking', type: 'depository', mask: '0001', balances: { current: 555 } }] }; } });
   const f = await fixture(plaid);
   try {
     await f.link('a'); await f.link('b');
+    initial = false;
     await f.request('/v1/plaid/sync', { method: 'POST', body: JSON.stringify({ itemId: 'item-a' }) });
     const { data } = await f.request('/v1/plaid/sync', { method: 'POST', body: JSON.stringify({ itemId: 'item-b' }) });
     assert.deepEqual(data.transactions.map(t => t.id), ['tx-access-b']);
-    assert.equal(data.accounts[0].currentBalance, 555);
+    assert.deepEqual(data.accounts.map(a => a.currentBalance).sort((a, b) => a - b), [555, 9000]);
     const b = (await f.request('/v1/plaid/accounts')).data.connections.find(c => c.itemId === 'item-b');
-    assert.equal(b.accounts[0].currentBalance, 555);
+    assert.deepEqual(b.accounts, data.accounts);
   } finally { await f.close(); }
 });
 
@@ -235,4 +240,19 @@ test('data saved before this version is normalised on read', async () => {
     assert.equal('location' in user.transactions.t1, false);
     assert.equal(user.transactions.t1.margin_item_id, 'item');
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('a restarted incremental sync restores earlier committed amounts and removals across chunks', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'margin-restart-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'data.json');
+  const store = new FileStore(file, encryptionKey);
+  await store.saveItem('u', { itemId: 'i', accessToken: 'token' }, 0);
+  const page = { added: [], modified: [], removed: [], hasMore: false };
+  await store.applySync('u', 'i', { ...page, cursor: 'initial', added: [tx('A', 'acct', 10), tx('B', 'acct', 20)] });
+  await store.applySync('u', 'i', { ...page, cursor: 'part1', hasMore: true, modified: [tx('A', 'acct', 50)], removed: [{ transaction_id: 'B' }] });
+  await store.applySync('u', 'i', { ...page, cursor: 'part2', hasMore: true, modified: [tx('A', 'acct', 80)], added: [tx('C', 'acct', 15)] });
+  const resumed = new FileStore(file, encryptionKey);
+  const final = await resumed.applySync('u', 'i', { ...page, cursor: 'final', startCursor: 'part2', restarted: true });
+  assert.deepEqual(Object.fromEntries(final.transactions.map(row => [row.transaction_id, row.amount])), { A: 10, B: 20 });
 });
