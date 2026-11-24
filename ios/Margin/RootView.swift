@@ -398,7 +398,9 @@ struct InterventionIncomeView: View {
 
     private func jobCard(_ job: Transaction, rates: [Int: Double], decisions: [String: [NetAllocation]]) -> some View {
         let end = Calendar.current.endOfDay(for: .now)
-        let transfers = job.netTransfers(in: transactions).filter { $0.date < end }
+        let recorded = job.netTransfers(in: transactions)
+        let transfers = recorded.filter { $0.date < end }
+        let scheduled = recorded.filter { $0.date >= end }
         return VStack(alignment: .leading, spacing: 10) {
             HStack { VStack(alignment: .leading) { Text(job.title).font(.headline); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(job.amount.money).bold() }
             let spentOnJob = transactions.filter { $0.date < end && !$0.isIncome && $0.ledgerScope == "business" && $0.jobID != nil && $0.jobID == job.jobID }.reduce(0) { $0 + $1.amount }
@@ -410,6 +412,11 @@ struct InterventionIncomeView: View {
             Divider()
             if !transfers.isEmpty {
                 HStack { Label(transfers.count == 1 ? "Net transferred" : "Net transferred (\(transfers.count))", systemImage: "arrow.right.circle.fill"); Spacer(); Text(transfers.reduce(0) { $0 + $1.amount }.money).bold() }.foregroundStyle(.green)
+            }
+            ForEach(scheduled) { transfer in
+                LabeledContent("Scheduled Net · \(transfer.date.formatted(date: .abbreviated, time: .omitted))", value: transfer.amount.moneyExact)
+            }
+            if !recorded.isEmpty {
                 Button("Record another transfer") { selectedGross = job }.font(.caption.bold()).tint(.marginInk)
             } else {
                 HStack { Text("No personal transfer recorded").font(.subheadline).foregroundStyle(.secondary); Spacer(); Button("Record Net") { selectedGross = job }.buttonStyle(.borderedProminent).tint(.marginInk) }

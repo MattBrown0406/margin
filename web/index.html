@@ -63,7 +63,26 @@ function renderBudget(){const spentOn=name=>sum(postedMonthTx(viewMonth).filter(
 function editBudget(gi,li){const l=state.groups[gi].lines[li],v=prompt(`Planned amount for ${l.name}`,l.planned);if(v===null)return;if(String(v).trim()==='')return toastMsg('Enter an amount of $0 or more');const n=parseAmount(v);if(n===null)return toastMsg('Enter an amount of $0 or more');l.planned=n;if(!save())return;render()}
 // This month's jobs, earlier jobs whose Net moved this month (so the Net total has a card), and, for the current
 // month, jobs from the last 90 days still waiting on a transfer (they would otherwise vanish on the 1st).
-function renderIncome(){const t=totals(viewMonth),cutoff=new Date();cutoff.setDate(cutoff.getDate()-90);const recent=isoDate(cutoff),gross=state.transactions.filter(x=>x.date<=today()&&x.type==='income'&&x.incomeKind==='gross'&&(inMonth(x,viewMonth)||transfersFor(x).some(n=>n.date<=today()&&inMonth(n,viewMonth))||(x.date<viewMonth+'-01'&&viewMonth===currentMonth()&&x.date>=recent&&!transfersFor(x).length))).sort(byDateDesc);$('grossTotal').textContent=money(t.gross);$('netTotal').textContent=money(t.net);$('jobs').innerHTML=gross.length?gross.map(g=>{const n=transfersFor(g).filter(x=>x.date<=today()&&inMonth(x,viewMonth));return `<div class="job-card"><div class="job-head"><div><div class="title">${esc(g.name)}</div><div class="sub">Received ${esc(g.date)}</div></div><div class="job-gross">${money(g.amount)}</div></div><div class="net-row">${n.length?`<span>✓ Net transferred ${esc(n.map(x=>x.date).join(', '))}</span><b>${money(sum(n))}</b></div><button class="linkbtn" onclick="openNet('${esc(g.jobId)}')">+ Record another transfer</button>`:`<span class="sub">No personal transfer recorded</span><button class="primary" onclick="openNet('${esc(g.jobId)}')">Record Net</button></div>`}</div>`}).join(''):'<div class="empty">No intervention income this month.<br>Use Add when a job pays.</div>'}
+function renderIncome(){
+  const t=totals(viewMonth),cutoff=new Date(),postedThrough=today();
+  cutoff.setDate(cutoff.getDate()-90);
+  const recent=isoDate(cutoff),jobs=state.transactions.filter(g=>{
+    if(g.type!=='income'||g.incomeKind!=='gross'||g.date>postedThrough)return false;
+    const transfers=transfersFor(g);
+    return inMonth(g,viewMonth)||transfers.some(n=>inMonth(n,viewMonth))||
+      (g.date<viewMonth+'-01'&&viewMonth===currentMonth()&&g.date>=recent&&!transfers.length);
+  }).sort(byDateDesc);
+  $('grossTotal').textContent=money(t.gross);$('netTotal').textContent=money(t.net);
+  $('jobs').innerHTML=jobs.map(g=>{
+    const transfers=transfersFor(g),inView=transfers.filter(n=>inMonth(n,viewMonth));
+    const paid=inView.filter(n=>n.date<=postedThrough),scheduled=inView.filter(n=>n.date>postedThrough);
+    const paidRow=paid.length?`<div class="net-row"><span>✓ Net transferred ${esc(paid.map(n=>n.date).join(', '))}</span><b>${money(sum(paid))}</b></div>`:'';
+    const scheduledRows=scheduled.map(n=>`<div class="net-row"><span>Scheduled Net · ${esc(n.date)}</span><b>${moneyExact(n.amount)}</b></div>`).join('');
+    const empty=inView.length?'':'<div class="sub">No personal transfer this month</div>';
+    const button=transfers.length?'+ Record another transfer':'Record Net';
+    return `<div class="job-card"><div class="job-head"><div><div class="title">${esc(g.name)}</div><div class="sub">Received ${esc(g.date)}</div></div><div class="job-gross">${money(g.amount)}</div></div>${paidRow}${scheduledRows}${empty}<button class="${transfers.length?'linkbtn':'primary'}" onclick="openNet('${esc(g.jobId)}')">${button}</button></div>`;
+  }).join('')||'<div class="empty">No intervention income this month.<br>Use Add when a job pays.</div>';
+}
 function openNet(jobId){netJobId=jobId;const g=state.transactions.find(x=>x.jobId===jobId&&x.incomeKind==='gross');$('netJobHint').innerHTML=`<b>${esc(g.name)}</b><br>Gross received by business: ${money(g.amount)}`;$('netAmount').value='';$('netDate').value=today();$('netModal').classList.add('open')}
 function saveNetTransfer(){const amount=parseAmount($('netAmount').value),date=$('netDate').value||today();if(!amount||!netJobId)return toastMsg('Enter the amount transferred');const g=state.transactions.find(x=>x.jobId===netJobId&&x.incomeKind==='gross');state.transactions.push({id:uid(),jobId:netJobId,name:g.name,amount,date,type:'income',scope:'personal',incomeKind:'net',category:'Owner transfer'});if(!save())return;closeModal('netModal');render();toastMsg('Net transfer recorded')}
 function renderBills(){const due=lines().filter(l=>l.due).sort((a,b)=>a.due-b.due),tx=monthTx(viewMonth);$('bills').innerHTML=due.map(l=>{const paid=sum(tx.filter(t=>t.type==='expense'&&t.scope==='personal'&&t.category===l.name&&t.date<=today()))>0.005;return `<div class="card bill"><div class="due">${l.due}</div><div class="grow"><div class="title">${esc(l.name)}</div><div class="sub">${paid?'Paid':'Upcoming'}</div></div><b>${money(l.planned)}</b></div>`}).join('')}
