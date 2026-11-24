@@ -40,9 +40,11 @@ private struct TaxPlanSections: View {
     }
     private var yearPayments: [EstimatedTaxPayment] { payments.filter { $0.taxYear == year } }
     private var plan: EstimatedTaxPlan {
-        EstimatedTax.plan(report: ScheduleC.report(entries: transactions.map(\.ledgerEntry), year: year), profile: settings.taxProfile,
-                          paidFederal: yearPayments.filter { !$0.isState }.reduce(0) { $0 + $1.amount },
-                          paidState: yearPayments.filter(\.isState).reduce(0) { $0 + $1.amount }, reserve: reserve, now: .now)
+        let now = Date.now
+        let posted = EstimatedTaxPayment.posted(yearPayments, through: now)
+        return EstimatedTax.plan(report: ScheduleC.report(entries: transactions.map(\.ledgerEntry).posted(through: now), year: year), profile: settings.taxProfile,
+                          paidFederal: posted.filter { !$0.isState }.reduce(0) { $0 + $1.amount },
+                          paidState: posted.filter(\.isState).reduce(0) { $0 + $1.amount }, reserve: reserve, now: now)
     }
     private var taxLine: BudgetCategory? { categories.first { $0.name.caseInsensitiveCompare(settings.taxLineName) == .orderedSame } }
 

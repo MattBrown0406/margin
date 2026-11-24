@@ -16,10 +16,12 @@ struct JobSummary: Equatable, Identifiable {
 }
 
 enum JobProfit {
-    /// Jobs (Gross receipts) dated within `range`, newest first. Business expenses count toward a job
+    /// Jobs (Gross receipts) dated in the requested year, newest first. Business expenses count toward a job
     /// when they carry its jobID; refunds are negative expenses and reduce the total.
-    static func summaries(entries: [LedgerEntry], in range: ClosedRange<Date>? = nil) -> [JobSummary] {
-        entries.filter { $0.isGross && $0.jobID != nil && (range?.contains($0.date) ?? true) }
+    static func summaries(entries: [LedgerEntry], year: Int? = nil, calendar: Calendar = .current) -> [JobSummary] {
+        entries.filter { entry in
+            entry.isGross && entry.jobID != nil && (year.map { calendar.component(.year, from: entry.date) == $0 } ?? true)
+        }
             .map { job in
                 JobSummary(jobID: job.jobID!, title: job.title, date: job.date, gross: job.amount,
                            expenses: entries.filter { $0.isBusinessExpense && $0.jobID == job.jobID }.total,

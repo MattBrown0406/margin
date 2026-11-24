@@ -281,7 +281,6 @@ struct PlanView: View {
     @Query private var allocations: [NetAllocation]
     @State private var section = 0
     private var netIncome: Double { NetAssignment.monthNet(transactions) }
-    private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var planned: Double { categories.reduce(0) { $0 + $1.monthlyLimit } }
     /// NET INCOME includes late-last-month Net still unassigned (it funds this month); PLANNED is what the plan needs
     /// from Net, since tax already set aside from Gross funds that much of the tax line.
@@ -340,9 +339,10 @@ struct PlanView: View {
             Text("Due dates stay separate from everyday spending so nothing sneaks up on you.").foregroundStyle(.secondary)
             // The tax line and sinking funds have due days for planning, but they're set-asides, not bills.
             let taxLine = FinanceSettings.pick(financeSettings)?.taxLineName ?? "Tax reserve"
+            let posted = transactions.map(\.ledgerEntry).personalSpendingThisMonth(through: .now)
             ForEach(categories.filter { $0.dueDay != nil && !$0.isFund && $0.name.caseInsensitiveCompare(taxLine) != .orderedSame }.sorted { ($0.dueDay ?? 0) < ($1.dueDay ?? 0) }) { bill in
                 // Net of refunds: a credit alone (or a charge fully refunded) doesn't mean the bill was paid.
-                let paidAmount = month.filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.category == bill.name }.reduce(0) { $0 + $1.amount }
+                let paidAmount = posted[bill.name, default: 0]
                 let paid = paidAmount > 0.005
                 HStack(spacing: 12) {
                     VStack { Text("DUE").font(.caption2.bold()); Text("\(bill.dueDay ?? 0)").font(.title3.bold()) }
@@ -583,13 +583,9 @@ struct ReportsView: View {
     private var businessExpense: Double { month.filter { !$0.isIncome && $0.ledgerScope == "business" }.reduce(0) { $0 + $1.amount } }
     private var personalExpense: Double { month.filter { !$0.isIncome && $0.ledgerScope == "personal" }.reduce(0) { $0 + $1.amount } }
     private var year: Int { Calendar.current.component(.year, from: .now) }
-    private var yearJobs: [JobSummary] {
-        let calendar = Calendar.current
-        guard let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
-              let end = calendar.date(byAdding: DateComponents(year: 1, second: -1), to: start) else { return [] }
-        return JobProfit.summaries(entries: transactions.map(\.ledgerEntry), in: start...end)
-    }
-    private var scheduleC: ScheduleCReport { ScheduleC.report(entries: transactions.map(\.ledgerEntry), year: year) }
+    private var postedEntries: [LedgerEntry] { transactions.map(\.ledgerEntry).posted(through: .now) }
+    private var yearJobs: [JobSummary] { JobProfit.summaries(entries: postedEntries, year: year) }
+    private var scheduleC: ScheduleCReport { ScheduleC.report(entries: postedEntries, year: year) }
     var body: some View {
         ScrollView { VStack(alignment: .leading, spacing: 16) {
             Text("Reports").font(.largeTitle.bold())

@@ -243,6 +243,37 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
 }
 
 @Suite struct JobProfitTests {
+    @Test func yearToDateIncludesTheLastFractionOfASecondAndOnlyPostedJobActivity() {
+        let midnight = day(2027, 1, 1, 0)
+        let last = midnight.addingTimeInterval(-0.125)
+        let job = UUID()
+        let entries = [gross(500, last, job: job), gross(1000, midnight, job: UUID()),
+                       spend(30, "Travel", last, scope: "business", job: job),
+                       spend(80, "Travel", midnight, scope: "business", job: job)]
+        let posted = entries.posted(through: day(2026, 12, 31), calendar: calendar)
+        let jobs = JobProfit.summaries(entries: posted, year: 2026, calendar: calendar)
+        #expect(jobs.count == 1)
+        #expect(jobs.first?.profit == 470)
+        #expect(ScheduleC.report(entries: posted, year: 2026, calendar: calendar).netProfit == 470)
+        #expect(ScheduleC.report(entries: entries.posted(through: day(2026, 12, 30), calendar: calendar), year: 2026, calendar: calendar).grossReceipts == 0)
+    }
+
+    @Test func scheduledBillPaymentsAndRefundsCountOnTheirPostingDay() {
+        let entries = [spend(400, "Rent", day(2026, 10, 31)), spend(100, "Rent", day(2026, 11, 12, 23)),
+                       spend(-100, "Rent", day(2026, 11, 13, 0)), spend(30, "Rent", day(2026, 11, 12), scope: "business")]
+        #expect(entries.personalSpendingThisMonth(through: day(2026, 11, 11), calendar: calendar).isEmpty)
+        #expect(entries.personalSpendingThisMonth(through: day(2026, 11, 12), calendar: calendar)["Rent"] == 100)
+        #expect(entries.personalSpendingThisMonth(through: day(2026, 11, 13), calendar: calendar)["Rent"] == 0)
+    }
+
+    @Test func aDayThatStartsAtOneEndsAtTheFollowingMidnight() throws {
+        var local = Calendar(identifier: .gregorian)
+        local.timeZone = try #require(TimeZone(identifier: "America/Sao_Paulo"))
+        let skippedMidnightDay = try #require(local.date(from: DateComponents(year: 2018, month: 11, day: 4, hour: 12)))
+        let nextMidnight = try #require(local.date(from: DateComponents(year: 2018, month: 11, day: 5, hour: 0)))
+        #expect(local.endOfDay(for: skippedMidnightDay) == nextMidnight)
+    }
+
     @Test func profitCountsOnlyThatJobsBusinessExpensesIncludingRefunds() {
         let a = UUID(), b = UUID()
         let entries = [gross(7500, day(2026, 9, 1), job: a, title: "Bend"), spend(875, "Travel", day(2026, 8, 30), scope: "business", job: a),

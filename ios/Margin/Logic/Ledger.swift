@@ -33,7 +33,7 @@ extension Calendar {
     /// Months from the start of `from`'s month to the start of `to`'s month (negative if earlier).
     func monthsBetween(_ from: Date, _ to: Date) -> Int { dateComponents([.month], from: startOfMonth(for: from), to: startOfMonth(for: to)).month ?? 0 }
     /// The first moment of the next day: "today or earlier" for entries stored at a time of day (bank imports are noon).
-    func endOfDay(for date: Date) -> Date { self.date(byAdding: .day, value: 1, to: startOfDay(for: date)) ?? date }
+    func endOfDay(for date: Date) -> Date { dateInterval(of: .day, for: date)?.end ?? date }
     /// "2026-10": a month that reads the same in every time zone (a stored "midnight on the 1st" moves to the
     /// previous month for someone further west).
     func monthKey(for date: Date) -> String {
@@ -43,5 +43,17 @@ extension Calendar {
 }
 
 extension Sequence where Element == LedgerEntry {
+    func posted(through day: Date, calendar: Calendar = .current) -> [LedgerEntry] {
+        let end = calendar.endOfDay(for: day)
+        return filter { $0.date < end }
+    }
+
+    func personalSpendingThisMonth(through day: Date, calendar: Calendar = .current) -> [String: Double] {
+        let start = calendar.startOfMonth(for: day)
+        return posted(through: day, calendar: calendar).reduce(into: [:]) { totals, entry in
+            if entry.isPersonalExpense && entry.date >= start { totals[entry.category, default: 0] += entry.amount }
+        }
+    }
+
     var total: Double { reduce(0) { $0 + $1.amount } }
 }

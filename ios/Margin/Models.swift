@@ -366,8 +366,11 @@ enum StarterBudget {
 /// The tax reserve, from records: Net assigned to taxes and tax set aside from jobs' Gross, minus what tax payments took
 /// out of it, plus any correction.
 enum TaxReserve {
-    static func balance(adjustment: Double, allocations: [NetAllocation], payments: [EstimatedTaxPayment]) -> Double {
-        adjustment + allocations.filter { AllocationKinds.fundsTaxReserve($0.kind) }.reduce(0) { $0 + $1.amount } - payments.reduce(0) { $0 + $1.reserveUsed }
+    static func balance(adjustment: Double, allocations: [NetAllocation], payments: [EstimatedTaxPayment], now: Date = .now) -> Double {
+        let end = Calendar.current.endOfDay(for: now)
+        let funded = allocations.filter { $0.date < end && AllocationKinds.fundsTaxReserve($0.kind) }.reduce(0) { $0 + $1.amount }
+        let used = EstimatedTaxPayment.posted(payments, through: now).reduce(0) { $0 + $1.reserveUsed }
+        return adjustment + funded - used
     }
 }
 
@@ -435,5 +438,12 @@ func addToFundOrGoal(_ name: String, amount: Double, categories: [BudgetCategory
         self.monthKey = monthKey
         self.closedAt = closedAt
         self.workbook = workbook
+    }
+}
+
+extension EstimatedTaxPayment {
+    static func posted(_ payments: [EstimatedTaxPayment], through day: Date) -> [EstimatedTaxPayment] {
+        let end = Calendar.current.endOfDay(for: day)
+        return payments.filter { $0.date < end }
     }
 }

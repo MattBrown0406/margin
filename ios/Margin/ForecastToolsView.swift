@@ -68,17 +68,17 @@ struct PaymentDelayView: View {
         let original = max(today, calendar.startOfDay(for: job.expectedDate))
         let delayed = calendar.date(byAdding: .day, value: 7 * weeks, to: original) ?? original
         let threshold = calendar.endOfDay(for: now)
-        let spent = Dictionary(grouping: entries.filter { $0.isPersonalExpense && calendar.isSameMonth($0.date, now) && $0.date < threshold }, by: \.category)
+        let spent = entries.personalSpendingThisMonth(through: now, calendar: calendar)
         let bills = lines.compactMap { line -> (name: String, dueDay: Int, amount: Double, paidThisMonth: Bool)? in
             guard let due = line.dueDay, !line.isFund, line.name.caseInsensitiveCompare(taxLine) != .orderedSame else { return nil }
-            let paid = spent[line.name]?.total ?? 0
+            let paid = spent[line.name, default: 0]
             return (line.name, due, line.monthlyLimit, paid >= line.monthlyLimit - 0.005)
         }
         let recurring = RecurringDetector.detect(entries: entries, now: now, ignoredKeys: ignoredMerchants)
         let charges = RecurringDetector.upcoming(recurring: recurring, bills: bills, now: now, until: delayed).map { charge in
             var bill = charge
             if bill.isBudgetBill && calendar.isSameMonth(bill.date, now) {
-                bill.amount = max(0, bill.amount - max(0, spent[bill.name]?.total ?? 0))
+                bill.amount = max(0, bill.amount - max(0, spent[bill.name, default: 0]))
             }
             return bill
         }
