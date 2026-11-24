@@ -16,12 +16,12 @@ struct RecurringChargesSection: View {
     var body: some View {
         let recurring = recurring, facts = MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: settings)
         let until = facts.nextIncome ?? Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
-        let month = transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }
+        let posted = transactions.map(\.ledgerEntry).personalSpendingThisMonth(through: .now)
         let taxLine = settings?.taxLineName ?? "Tax reserve"
         // Bills only: the tax line and sinking funds are set-asides (Assign Net covers them), not payments that leave.
         let bills = categories.compactMap { c -> (name: String, dueDay: Int, amount: Double, paidThisMonth: Bool)? in
             guard let day = c.dueDay, !c.isFund, c.name.caseInsensitiveCompare(taxLine) != .orderedSame else { return nil }
-            return (c.name, day, c.monthlyLimit, month.filter { $0.category == c.name }.reduce(0) { $0 + $1.amount } > 0.005)
+            return (c.name, day, c.monthlyLimit, posted[c.name, default: 0] > 0.005)
         }
         let upcoming = RecurringDetector.upcoming(recurring: recurring, bills: bills, now: .now, until: until)
         let active = recurring.filter { !$0.mayHaveStopped }

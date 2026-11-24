@@ -139,7 +139,7 @@ enum JobTaxSetAside {
 
     /// The share of Gross to set aside for a tax year (0 when there's nothing to estimate yet).
     static func rate(transactions: [Transaction], settings: FinanceSettings?, year: Int, now: Date = .now) -> Double {
-        let report = ScheduleC.report(entries: transactions.map(\.ledgerEntry), year: year)
+        let report = ScheduleC.report(entries: transactions.map(\.ledgerEntry).posted(through: now), year: year)
         // For a past year, project as of its end.
         let asOf = Calendar.current.component(.year, from: now) > year ? (Calendar.current.date(from: DateComponents(year: year + 1, month: 1, day: 1)) ?? now) : now
         return EstimatedTax.plan(report: report, profile: settings?.taxProfile ?? TaxProfile(), paidFederal: 0, paidState: 0, reserve: 0, now: asOf).setAsideRate
@@ -260,14 +260,14 @@ enum Reminders {
         let allocations = (try? context.fetch(FetchDescriptor<NetAllocation>())) ?? []
         let payments = (try? context.fetch(FetchDescriptor<EstimatedTaxPayment>())) ?? []
         let calendar = Calendar.current
-        let month = transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && calendar.isSameMonth($0.date, now) }
+        let posted = transactions.map(\.ledgerEntry).personalSpendingThisMonth(through: now, calendar: calendar)
         let bills = categories.compactMap { c -> (name: String, dueDay: Int, amount: Double, paidThisMonth: Bool)? in
             guard let day = c.dueDay, !c.isFund, c.name.caseInsensitiveCompare(settings.taxLineName) != .orderedSame else { return nil }
-            return (c.name, day, c.monthlyLimit, month.filter { $0.category == c.name }.reduce(0) { $0 + $1.amount } > 0.005)
+            return (c.name, day, c.monthlyLimit, posted[c.name, default: 0] > 0.005)
         }
         let year = EstimatedTax.plannerYear(now: now)
-        let yearPayments = payments.filter { $0.taxYear == year }
-        let plan = EstimatedTax.plan(report: ScheduleC.report(entries: transactions.map(\.ledgerEntry), year: year), profile: settings.taxProfile,
+        let yearPayments = EstimatedTaxPayment.posted(payments, through: now).filter { $0.taxYear == year }
+        let plan = EstimatedTax.plan(report: ScheduleC.report(entries: transactions.map(\.ledgerEntry).posted(through: now), year: year), profile: settings.taxProfile,
                                      paidFederal: yearPayments.filter { !$0.isState }.reduce(0) { $0 + $1.amount },
                                      paidState: yearPayments.filter(\.isState).reduce(0) { $0 + $1.amount }, reserve: 0, now: now)
         let taxDue = plan.next.map { (date: $0.dueDate, amount: plan.dueNextFederal + plan.dueNextState, quarter: $0.quarter) }

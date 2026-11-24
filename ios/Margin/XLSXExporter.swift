@@ -41,7 +41,10 @@ enum XLSXExporter {
     static func makeWorkbook(transactions: [Transaction], categories: [BudgetCategory], reportMonth: Date = .now,
                              close: Reconciliation? = nil) -> Data {
         let calendar = Calendar.current
-        let month = transactions.filter { calendar.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+        let periodEnd = calendar.dateInterval(of: .month, for: reportMonth)?.end ?? reportMonth
+        let cutoff = close == nil ? calendar.endOfDay(for: reportMonth) : periodEnd
+        let reportTransactions = transactions.filter { $0.date < cutoff }
+        let month = reportTransactions.filter { calendar.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
         let grossRows = month.filter { $0.isIncome && $0.incomeKind == "gross" }.sorted { $0.date < $1.date }
         let expenses = month.filter { !$0.isIncome }.sorted { $0.date < $1.date }
         let gross = grossRows.reduce(0) { $0 + $1.amount }
@@ -87,15 +90,11 @@ enum XLSXExporter {
             [.text("Note"), .text("Gross is money received from interventions. Net is money actually transferred from the business account to the personal account.")]
         ]
 
-        let periodEnd = calendar.dateInterval(of: .month, for: reportMonth)?.end ?? reportMonth
-        let reportTransactions = close == nil ? transactions : transactions.filter { $0.date < periodEnd }
         let entries = reportTransactions.map(\.ledgerEntry), year = calendar.component(.year, from: reportMonth)
         var jobRows: [[WorkbookCell]] = [[.text("Date received"), .text("Job"), .text("Gross"), .text("Job expenses"), .text("Profit"), .text("Margin"), .text("Net transferred")]]
-        if let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)), let end = calendar.date(byAdding: DateComponents(year: 1, second: -1), to: start) {
-            for job in JobProfit.summaries(entries: entries, in: start...end).reversed() {
-                jobRows.append([.text(date(job.date)), .text(job.title), .number(job.gross), .number(job.expenses), .number(job.profit),
-                                job.margin.map { .text($0.wholePercent) } ?? .text(""), .number(job.transferred)])
-            }
+        for job in JobProfit.summaries(entries: entries, year: year, calendar: calendar).reversed() {
+            jobRows.append([.text(date(job.date)), .text(job.title), .number(job.gross), .number(job.expenses), .number(job.profit),
+                            job.margin.map { .text($0.wholePercent) } ?? .text(""), .number(job.transferred)])
         }
         let scheduleC = ScheduleC.report(entries: entries, year: year, calendar: calendar)
         var scheduleRows: [[WorkbookCell]] = [[.text("Line"), .text("Schedule C item (\(year), year to date)"), .text("Amount"), .text("Note")],
