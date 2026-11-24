@@ -11,6 +11,7 @@ import SwiftData
     var category: String = ""
     var isIncome: Bool = false
     var isEssential: Bool = true
+    var workHours: Double?
     var splitCategory: String?
     var splitAmount: Double?
     var externalID: String?
@@ -419,5 +420,20 @@ func addToFundOrGoal(_ name: String, amount: Double, categories: [BudgetCategory
         } else {
             context.insert(MerchantRule(key: key, scope: scope, category: category))
         }
+    }
+}
+
+
+/// A dated, immutable workbook. A later close creates a separate edition.
+@Model final class ClosedMonth {
+    var id: UUID = UUID()
+    var monthKey: String = ""
+    var closedAt: Date = Date.now
+    @Attribute(.externalStorage) var workbook: Data = Data()
+
+    init(monthKey: String, closedAt: Date, workbook: Data) {
+        self.monthKey = monthKey
+        self.closedAt = closedAt
+        self.workbook = workbook
     }
 }

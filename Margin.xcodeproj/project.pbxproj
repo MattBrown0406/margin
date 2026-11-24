@@ -18,6 +18,9 @@
 		90BCEA03CD3DB3383A223DBB /* MarginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 149BC7B02E3C9E25122B9EE1 /* MarginService.swift */; };
 		4A26755F1979AAC34B463BD1 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD9E1A7781DDD5E19C959A76 /* AccountView.swift */; };
 		0BB6019E8781C72F88AA82BD /* ForecastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D9D1958E47048A6CF0288EE /* ForecastView.swift */; };
+		CD681FA83AFF473992354337 /* JobQuoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 308067EE96244B75BF08BAF1 /* JobQuoteView.swift */; };
+		492C292282A14E3FBAFBC0D1 /* MonthCloseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A715165BE94214BE9A86C9 /* MonthCloseView.swift */; };
+		B9145BCA140B4E61903E24F3 /* ForecastToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC9FCE454A0645479591FFD0 /* ForecastToolsView.swift */; };
 		37D5CF7B5EA93FD6D4935098 /* AffordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C121ED7522642FF3F703F24B /* AffordView.swift */; };
 		FDACCC537689EC95B6C0E8C6 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 320E8439B00086C397A59960 /* Intents.swift */; };
 		4DBE6D55A4A24C133B9BB41A /* Ledger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEF505194953205EA41D9B /* Ledger.swift */; };
@@ -25,6 +28,7 @@
 		C55E2B676A9899C7AE52A88C /* SafeToSpend.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */; };
 		838C47ABB6DDC310D6D97B88 /* Forecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5212DD21910B6B29901142D /* Forecast.swift */; };
 		0F5A9E27E12B96E2DA4EF7E6 /* JobProfit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BDCBEE92CB05AF26CB4045 /* JobProfit.swift */; };
+		A02605A2668F4D11977AD41A /* Planning.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC477225BFA5483A929CAD87 /* Planning.swift */; };
 		FDDCAE7CB401FFC7A822B14D /* Affordability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F352E0341128E92F817089 /* Affordability.swift */; };
 		ACD055DC270F6CBB47A4AED8 /* Ledger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45EEF505194953205EA41D9B /* Ledger.swift */; };
 		A4C535F481C1F8B2E68C7C78 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42AF58B43882B1F9BDC15E26 /* Money.swift */; };
@@ -69,6 +73,9 @@
 		149BC7B02E3C9E25122B9EE1 /* MarginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarginService.swift; sourceTree = "<group>"; };
 		BD9E1A7781DDD5E19C959A76 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
 		9D9D1958E47048A6CF0288EE /* ForecastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForecastView.swift; sourceTree = "<group>"; };
+		308067EE96244B75BF08BAF1 /* JobQuoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobQuoteView.swift; sourceTree = "<group>"; };
+		64A715165BE94214BE9A86C9 /* MonthCloseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthCloseView.swift; sourceTree = "<group>"; };
+		BC9FCE454A0645479591FFD0 /* ForecastToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForecastToolsView.swift; sourceTree = "<group>"; };
 		C121ED7522642FF3F703F24B /* AffordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AffordView.swift; sourceTree = "<group>"; };
 		320E8439B00086C397A59960 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
 		45EEF505194953205EA41D9B /* Ledger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ledger.swift; sourceTree = "<group>"; };
@@ -76,6 +83,7 @@
 		AC1490BA2393ACB81B88B48F /* SafeToSpend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeToSpend.swift; sourceTree = "<group>"; };
 		A5212DD21910B6B29901142D /* Forecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Forecast.swift; sourceTree = "<group>"; };
 		E5BDCBEE92CB05AF26CB4045 /* JobProfit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobProfit.swift; sourceTree = "<group>"; };
+		DC477225BFA5483A929CAD87 /* Planning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Planning.swift; sourceTree = "<group>"; };
 		74F352E0341128E92F817089 /* Affordability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Affordability.swift; sourceTree = "<group>"; };
 		C06AECF66CD80B41B9EFE626 /* Margin.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Margin.entitlements; sourceTree = "<group>"; };
 		2DFC1934796351CACE6E9D88 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -152,6 +160,9 @@
 				BD9E1A7781DDD5E19C959A76 /* AccountView.swift */,
 				C121ED7522642FF3F703F24B /* AffordView.swift */,
 				9D9D1958E47048A6CF0288EE /* ForecastView.swift */,
+				308067EE96244B75BF08BAF1 /* JobQuoteView.swift */,
+				64A715165BE94214BE9A86C9 /* MonthCloseView.swift */,
+				BC9FCE454A0645479591FFD0 /* ForecastToolsView.swift */,
 				88528DC7E552AC3F34EF9B26 /* EverydayViews.swift */,
 				EFE96B094C9DE08CA30FEB48 /* RecurringView.swift */,
 				1223679AE857F380D646311E /* NetWorthView.swift */,
@@ -194,6 +205,7 @@
 				0A2BF94C68E9E6779E9B754E /* SteadyPaycheck.swift */,
 				AF90235415E05C7FB36D787B /* DebtPayoff.swift */,
 				E5BDCBEE92CB05AF26CB4045 /* JobProfit.swift */,
+				DC477225BFA5483A929CAD87 /* Planning.swift */,
 				74F352E0341128E92F817089 /* Affordability.swift */,
 			);
 			path = Logic;
@@ -321,6 +333,9 @@
 				90BCEA03CD3DB3383A223DBB /* MarginService.swift in Sources */,
 				4A26755F1979AAC34B463BD1 /* AccountView.swift in Sources */,
 				0BB6019E8781C72F88AA82BD /* ForecastView.swift in Sources */,
+				CD681FA83AFF473992354337 /* JobQuoteView.swift in Sources */,
+				492C292282A14E3FBAFBC0D1 /* MonthCloseView.swift in Sources */,
+				B9145BCA140B4E61903E24F3 /* ForecastToolsView.swift in Sources */,
 				91194AB1E8BD7237F1AC04FE /* EverydayViews.swift in Sources */,
 				D50CC37094640BD250E56158 /* RecurringView.swift in Sources */,
 				1FEC946058B99C3D2548E13D /* NetWorthView.swift in Sources */,
@@ -340,6 +355,7 @@
 				948709412AD2494849AF04A9 /* SteadyPaycheck.swift in Sources */,
 				791191016B2082E9DA9111BD /* DebtPayoff.swift in Sources */,
 				0F5A9E27E12B96E2DA4EF7E6 /* JobProfit.swift in Sources */,
+				A02605A2668F4D11977AD41A /* Planning.swift in Sources */,
 				FDDCAE7CB401FFC7A822B14D /* Affordability.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

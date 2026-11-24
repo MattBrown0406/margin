@@ -195,13 +195,15 @@ struct TodayView: View {
                         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(.white.opacity(0.8), lineWidth: 1))
                         .shadow(color: Color.marginInk.opacity(0.14), radius: 8, y: 4)
                 }
+                NavigationLink { SpendingExplanationView(transactions: transactions, categories: categories) } label: {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("SAFE TO SPEND TODAY").font(.caption.bold()).tracking(1.4).foregroundStyle(.white.opacity(0.65))
+                    HStack { Text("SAFE TO SPEND TODAY").font(.caption.bold()).foregroundStyle(.white.opacity(0.65)); Spacer(); Image(systemName: "chevron.right").foregroundStyle(.white) }
                     Text(safe.safeToday.money).font(.system(size: 52, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     Text(safe.spentToday > 0 ? "\(safe.spentToday.money) of today’s \(safe.dailyAllowance.money) already spent" : "from your personal plan — not business revenue").foregroundStyle(.white.opacity(0.75))
                     Divider().overlay(.white.opacity(0.2))
                     HStack { Label("\(safe.daysLeft) days left", systemImage: "calendar"); Spacer(); Text("\(safe.flexibleLeft.money) flexible") }.font(.subheadline).foregroundStyle(.white.opacity(0.85))
                 }.padding(22).background(Color.marginInk, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                }.buttonStyle(.plain).accessibilityHint("Shows changes since yesterday")
                 Button { showAfford = true } label: {
                     HStack(spacing: 13) {
                         Image(systemName: "questionmark.bubble.fill").frame(width: 42, height: 42).background(Color.marginLime.opacity(0.5), in: RoundedRectangle(cornerRadius: 13))
@@ -585,6 +587,8 @@ struct ReportsView: View {
                 LabeledContent("Retained in business", value: (gross - businessExpense - net).money)
                 LabeledContent("Personal margin", value: (net - personalExpense).money)
             }.font(.headline).marginCard()
+            NavigationLink { MonthCloseView() } label: { Label("Month-end close", systemImage: "checklist") }.buttonStyle(.bordered)
+            NavigationLink { JobQuoteView() } label: { Label("Quote a job", systemImage: "function") }.buttonStyle(.bordered)
             JobProfitCard(year: year, jobs: yearJobs, scheduleC: scheduleC)
             Picker("Ledger", selection: $scope) { Text("All").tag("all"); Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented)
             ForEach(shown) { TransactionRow(tx: $0) }

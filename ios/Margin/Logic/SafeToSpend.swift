@@ -62,7 +62,15 @@ struct WidgetSnapshot: Codable, Equatable {
     static func load(from defaults: UserDefaults?) -> WidgetSnapshot? {
         defaults?.data(forKey: defaultsKey).flatMap { try? JSONDecoder().decode(WidgetSnapshot.self, from: $0) }
     }
+    static func previous(from defaults: UserDefaults?) -> WidgetSnapshot? {
+        defaults?.data(forKey: defaultsKey + ".previous").flatMap { try? JSONDecoder().decode(WidgetSnapshot.self, from: $0) }
+    }
     func save(to defaults: UserDefaults?) {
+        if let data = defaults?.data(forKey: Self.defaultsKey),
+           let last = try? JSONDecoder().decode(Self.self, from: data), last.day < day,
+           !Calendar.current.isDate(last.day, inSameDayAs: day) {
+            defaults?.set(data, forKey: Self.defaultsKey + ".previous")
+        }
         if let data = try? JSONEncoder().encode(self) { defaults?.set(data, forKey: Self.defaultsKey) }
     }
 }

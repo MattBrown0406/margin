@@ -37,6 +37,11 @@ struct ForecastView: View {
         let months = months, likely = likelyPayments, awaiting = awaitingTransfers
         VStack(alignment: .leading, spacing: 14) {
             Text("Booked work, projected forward. Net expected from each booked job counts in the month it should pay.").font(.subheadline).foregroundStyle(.secondary)
+            NavigationLink {
+                let settings = FinanceSettings.pick(settingsList)
+                PaymentDelayView(jobs: months.flatMap(\.jobs).filter { $0.expectedNet > 0 }, entries: entries, lines: categories.map(\.planLine),
+                                 taxLine: settings?.taxLineName ?? "Tax reserve", ignoredMerchants: Set(settings?.ignoredRecurringKeys ?? []))
+            } label: { Label("Test a late payment", systemImage: "calendar.badge.clock") }
             ForecastHeadline(months: months)
             VStack(spacing: 0) { ForEach(months) { ForecastMonthRow(month: $0); if $0.id != months.last?.id { Divider() } } }.marginCard()
 
