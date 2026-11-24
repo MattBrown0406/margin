@@ -49,7 +49,11 @@ struct PaymentDelayView: View {
                     }
                     LabeledContent("Expected personal Net", value: job.expectedNet.moneyExact)
                     Picker("Delay", selection: $weeks) { Text("2 weeks").tag(2); Text("4 weeks").tag(4) }.pickerStyle(.segmented)
-                    LabeledContent("Cash available for bills today") { TextField("USD", text: $cash).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing) }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Cash available for bills today").font(.subheadline)
+                        TextField("USD", text: $cash).keyboardType(.numbersAndPunctuation).textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Cash available for bills today")
+                    }
                 }
                 if let opening = planningNumber(cash, signed: true) {
                     result(job: job, cash: opening)

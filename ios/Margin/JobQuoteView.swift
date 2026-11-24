@@ -34,7 +34,7 @@ struct JobQuoteView: View {
                             Image(systemName: references.contains(job.id) ? "checkmark.circle.fill" : "circle")
                             VStack(alignment: .leading) { Text(job.title); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption) }
                             Spacer(); Text(job.amount.moneyExact)
-                        }
+                        }.contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityValue(references.contains(job.id) ? "Selected" : "Unselected")
                     if references.contains(job.id) {
                         Button(job.workHours.map { "Edit actual hours (\($0.formatted()))" } ?? "Add actual hours") { editingHours = job }
@@ -77,9 +77,10 @@ struct JobQuoteView: View {
     }
 
     private func field(_ name: String, _ value: Binding<String>, fallback: Double? = nil) -> some View {
-        LabeledContent(name) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(name).font(.subheadline)
             TextField(name, text: value, prompt: Text(fallback?.formatted(.number.precision(.fractionLength(0...2))) ?? "Enter"))
-                .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                .keyboardType(.decimalPad).textFieldStyle(.roundedBorder).accessibilityLabel(name)
         }
     }
 

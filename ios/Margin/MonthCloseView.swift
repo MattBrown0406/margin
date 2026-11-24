@@ -93,14 +93,21 @@ private struct CloseReview: View {
         Binding(get: { draft[keyPath: path][scope.rawValue] ?? "" }, set: { text in update { $0[keyPath: path][scope.rawValue] = text } })
     }
 
+    private func statementField(_ title: String, path: WritableKeyPath<CloseDraft, [String: String]>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline)
+            TextField(title, text: amountField(path)).keyboardType(.numbersAndPunctuation).textFieldStyle(.roundedBorder)
+        }
+    }
+
     var body: some View {
         let current = draft
         Section {
             Picker("Ledger", selection: $scope) {
                 ForEach(CloseLedger.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
             }.pickerStyle(.segmented)
-            LabeledContent("Opening statement balance") { TextField("Opening", text: amountField(\.opening)).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing) }
-            LabeledContent("Ending statement balance") { TextField("Ending", text: amountField(\.ending)).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing) }
+            statementField("Opening statement balance", path: \.opening)
+            statementField("Ending statement balance", path: \.ending)
             if let result = balance(scope, draft: current) {
                 LabeledContent("Ending balance from ledger", value: result.expected.moneyExact)
                 LabeledContent("Unexplained difference", value: result.difference.moneyExact).bold()
@@ -123,7 +130,7 @@ private struct CloseReview: View {
                             Text(row.date.formatted(date: .abbreviated, time: .omitted)).font(.caption)
                         }
                         Spacer(); Text((scope.movement(row.ledgerEntry) ?? 0).moneyExact)
-                    }
+                    }.contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("match-\(scope.rawValue)-\(row.id.uuidString)").accessibilityValue(matched ? "Matched" : "Unmatched")
             }
         } header: { Text("Match entries to your statement") } footer: { Text("A missing or incorrect entry can be added or edited in Activity and Add. Return here to review the difference.") }
