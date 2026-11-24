@@ -86,13 +86,24 @@ struct QuoteEstimate {
     let takeHome: Double
     let reserve: Double
     let minimum: Double
+    private static func decimal(_ value: Double) -> Decimal? {
+        guard value.isFinite else { return nil }
+        return Decimal(string: String(value), locale: Locale(identifier: "en_US_POSIX"))
+    }
+
     static func calculate(hours: Double, hourly: Double, costs: Double, reservePercent: Double) -> QuoteEstimate? {
-        guard hours > 0, hourly > 0, costs >= 0, (0..<100).contains(reservePercent) else { return nil }
-        // Reserve is a share of profit after job costs. Round the customer's quote up to the next cent.
-        let locale = Locale(identifier: "en_US_POSIX")
-        func decimal(_ value: Double) -> Decimal? { Decimal(string: String(value), locale: locale) }
-        guard let time = decimal(hours), let pay = decimal(hourly), let expenses = decimal(costs), let percent = decimal(reservePercent) else { return nil }
-        let takeHome = time * pay
+        guard let hours = decimal(hours), let hourly = decimal(hourly), hours > 0, hourly > 0 else { return nil }
+        return price(takeHome: hours * hourly, costs: costs, reservePercent: reservePercent)
+    }
+
+    static func calculate(target: Double, costs: Double, reservePercent: Double) -> QuoteEstimate? {
+        guard let target = decimal(target) else { return nil }
+        return price(takeHome: target, costs: costs, reservePercent: reservePercent)
+    }
+
+    private static func price(takeHome: Decimal, costs: Double, reservePercent: Double) -> QuoteEstimate? {
+        guard takeHome > 0, costs >= 0, (0..<100).contains(reservePercent),
+              let expenses = decimal(costs), let percent = decimal(reservePercent) else { return nil }
         var raw = expenses + takeHome / (1 - percent / 100)
         guard !raw.isNaN, raw < 45_035_996_273_704 else { return nil }
         var price = Decimal()

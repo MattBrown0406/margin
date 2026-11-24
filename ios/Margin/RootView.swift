@@ -18,7 +18,7 @@ struct RootView: View {
 
     private var widgetSnapshot: WidgetSnapshot { WidgetSnapshot(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: referenceDay) }
 
-    var body: some View {
+    private var tabs: some View {
         TabView(selection: $selectedTab) {
             NavigationStack { TodayView(referenceDay: referenceDay, transactions: transactions, categories: categories, goals: goals, bookedJobs: bookedJobs) }
                 .tabItem { Label("Today", systemImage: "sun.max.fill") }.tag(0)
@@ -30,7 +30,10 @@ struct RootView: View {
             NavigationStack { ReportsView(transactions: transactions, categories: categories) }
                 .tabItem { Label("Reports", systemImage: "chart.bar.doc.horizontal.fill") }.tag(4)
         }
-        .tint(.marginInk)
+    }
+
+    var body: some View {
+        tabs.tint(.marginInk)
         .onChange(of: selectedTab) { previous, value in if value == 2 { showAdd = true; selectedTab = previous } }
         .sheet(isPresented: $showAdd) { AddEntryView(transactions: transactions) }
         .task { seedAndMigrateIfNeeded() }

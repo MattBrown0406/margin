@@ -62,6 +62,7 @@ import Testing
 
     @Test func quoteCoversCostsAndTakeHomeAfterReserve() {
         let estimate = QuoteEstimate.calculate(hours: 10, hourly: 80, costs: 200, reservePercent: 20)
+        #expect(QuoteEstimate.calculate(target: 800, costs: 200, reservePercent: 20)?.minimum == 1200)
         #expect(estimate?.minimum == 1200 && estimate?.reserve == 200 && estimate?.takeHome == 800)
         #expect(QuoteEstimate.calculate(hours: 1, hourly: 100, costs: 0, reservePercent: 15)?.minimum == 117.65)
         #expect(QuoteEstimate.calculate(hours: 0.01, hourly: 0.01, costs: 0, reservePercent: 0)?.minimum == 0.01)
