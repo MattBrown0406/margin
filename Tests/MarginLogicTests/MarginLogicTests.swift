@@ -22,10 +22,10 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
     func parses(text: String, locale: String, expected: Double) { #expect(Double(moneyInput: text, locale: Locale(identifier: locale)) == expected) }
 
     @Test(arguments: ["", "abc", "-5", "0", "0.004", "−3", "Invoice #1042 $750.00", "3 for $10", "1e3", "50¢", "1 2", "1.234,5.6",
-                      "5k", "50 cents", "Invoice 1042", "0,001"])
+                      "5k", "50 cents", "Invoice 1042", "0,001", String(repeating: "9", count: 307)])
     func rejects(text: String) { #expect(Double(moneyInput: text, locale: Locale(identifier: "en_US")) == nil) }
 
-    @Test(arguments: [("USD 40", 40.0), (".50", 0.5), ("1'234.50", 1234.5), ("$ 1,234,567", 1234567), ("€12", 12)])
+    @Test(arguments: [("1.005", 1.01), ("USD 40", 40.0), (".50", 0.5), ("1'234.50", 1234.5), ("$ 1,234,567", 1234567), ("€12", 12)])
     func acceptsCurrencyDecorations(text: String, expected: Double) { #expect(Double(moneyInput: text, locale: Locale(identifier: "en_US")) == expected) }
 }
 
@@ -74,6 +74,15 @@ private let lines = [PlanLine(name: "Groceries", monthlyLimit: 600, isFlexible: 
 }
 
 @Suite struct ForecastTests {
+    @Test func scheduledTransfersAreExpectedUntilTheirLocalDayArrives() {
+        let entries = [net(100, day(2026, 9, 10, 18)), net(900, day(2026, 9, 11)), net(250, day(2026, 10, 1))]
+        let forecast = CashFlowForecast.months(entries: entries, booked: [], plannedMonthly: 1000,
+                                              now: day(2026, 9, 10), count: 2, calendar: calendar)
+        #expect(forecast.map(\.inHand) == [100, 0])
+        #expect(forecast.map(\.expectedNet) == [900, 250])
+        #expect(forecast.map(\.gap) == [0, -750])
+    }
+
     let now = day(2026, 10, 4)
 
     @Test func combinesReceivedAndBookedNetAndCarriesOverdueJobsIntoThisMonth() {
@@ -347,6 +356,7 @@ private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "
         // confirmed paid
         let paid = CashFlowForecast.expectedNet(open: [], paid: [(booking, job)], entries: entries, calendar: calendar)
         let m = CashFlowForecast.months(entries: entries, booked: open, plannedMonthly: 6000, now: now, count: 1, calendar: calendar)
+        #expect(paid == open)
         #expect(m[0].receivedNet + m[0].expectedNet == 6000)   // truth: 1000 in + 5000 still to transfer
     }
 
@@ -395,6 +405,7 @@ private func acmeNet(_ a: Double, _ date: Date, _ job: UUID, _ title: String = "
         let exp = CashFlowForecast.expectedNet(open: [a, b], paid: [], entries: entries, calendar: calendar)
         let m = CashFlowForecast.months(entries: entries, booked: exp, plannedMonthly: 0, now: now, count: 1, calendar: calendar)
         #expect(likely[b.id]?.jobID == job)
+        #expect(m[0].receivedNet == 1800 && m[0].expectedNet == 3000)
     }
 
     // 3b. A's exact-amount Gross arrives late, closer to B's date.

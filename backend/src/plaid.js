@@ -31,8 +31,18 @@ export class PlaidClient {
   // several requests instead of failing the same way every time. The store keys transactions by id, so pages
   // fetched again after a restart are applied idempotently.
   async syncPages(accessToken, initialCursor) {
-    let cursor = initialCursor || null, added = [], modified = [], removed = [], accounts, pages = 0, hasMore = false;
-    do { const page = await this.syncPage(accessToken, cursor); added.push(...page.added); modified.push(...page.modified); removed.push(...page.removed); accounts = page.accounts || accounts; cursor = page.next_cursor; pages++; hasMore = Boolean(page.has_more); } while (hasMore && pages < MAX_PAGES);
-    return { cursor, added, modified, removed, accounts, hasMore };
+    let cursor = initialCursor || null, hasMore = false, pages = 0;
+    const added = [], modified = [], removed = [], accounts = new Map();
+    do {
+      const page = await this.syncPage(accessToken, cursor);
+      added.push(...page.added);
+      modified.push(...page.modified);
+      removed.push(...page.removed);
+      for (const account of page.accounts ?? []) accounts.set(account.account_id, account);
+      cursor = page.next_cursor;
+      hasMore = Boolean(page.has_more);
+      pages++;
+    } while (hasMore && pages < MAX_PAGES);
+    return { cursor, added, modified, removed, accounts: [...accounts.values()], hasMore };
   }
 }

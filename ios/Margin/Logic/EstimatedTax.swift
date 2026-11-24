@@ -104,6 +104,12 @@ struct EstimatedTaxPlan: Equatable {
     /// Owed by the next due date: installments through it, less what's been paid.
     var dueNextFederal: Double
     var dueNextState: Double
+    func isPaid(through quarter: Int) -> Bool {
+        let through = installments.filter { $0.quarter <= quarter }
+        return paidFederal >= (through.reduce(0) { $0 + $1.federal } * 100).rounded() / 100
+            && paidState >= (through.reduce(0) { $0 + $1.state } * 100).rounded() / 100
+    }
+
     /// Share of each job's Gross to set aside to cover this year's federal and state tax.
     var setAsideRate: Double
     /// Still to set aside this year, beyond payments made and what's already in the reserve.
@@ -197,7 +203,9 @@ enum EstimatedTax {
         let dueFederal = max(0, throughNext.reduce(0) { $0 + $1.federal } - paidFederal)
         let dueState = max(0, throughNext.reduce(0) { $0 + $1.state } - paidState)
 
-        let stillToSave = max(0, recommended + estimate.stateTax - paidFederal - paidState - max(0, reserve))
+        let federalLeft = max(0, recommended - paidFederal)
+        let stateLeft = max(0, estimate.stateTax - paidState)
+        let stillToSave = max(0, federalLeft + stateLeft - max(0, reserve))
         let month = calendar.component(.year, from: now) == report.year ? calendar.component(.month, from: now) : 12
         return EstimatedTaxPlan(taxYear: report.year, ytdGross: report.grossReceipts, ytdProfit: report.netProfit,
                                 projectedProfit: projectedProfit, projectedGross: projectedGross, estimate: estimate,

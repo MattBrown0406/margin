@@ -31,7 +31,7 @@ struct RootView: View {
         }
         .tint(.marginInk)
         .onChange(of: selectedTab) { previous, value in if value == 2 { showAdd = true; selectedTab = previous } }
-        .sheet(isPresented: $showAdd) { AddEntryView(categories: categories, transactions: transactions) }
+        .sheet(isPresented: $showAdd) { AddEntryView(transactions: transactions) }
         .task { seedAndMigrateIfNeeded() }
         // iCloud can deliver another device's starter budget after this one seeded its own.
         .onChange(of: categories.count) { removeSyncDuplicates() }
@@ -265,7 +265,7 @@ struct PlanView: View {
     @Query private var financeSettings: [FinanceSettings]
     @Query private var allocations: [NetAllocation]
     @State private var section = 0
-    private var netIncome: Double { month.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" }.reduce(0) { $0 + $1.amount } }
+    private var netIncome: Double { NetAssignment.monthNet(transactions) }
     private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var planned: Double { categories.reduce(0) { $0 + $1.monthlyLimit } }
     /// NET INCOME includes late-last-month Net still unassigned (it funds this month); PLANNED is what the plan needs
@@ -386,7 +386,7 @@ struct InterventionIncomeView: View {
             HStack { VStack(alignment: .leading) { Text(job.title).font(.headline); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(job.amount.money).bold() }
             let spentOnJob = transactions.filter { !$0.isIncome && $0.ledgerScope == "business" && $0.jobID != nil && $0.jobID == job.jobID }.reduce(0) { $0 + $1.amount }
             if spentOnJob != 0 {
-                HStack { Text("Job expenses \(spentOnJob.money)"); Spacer(); Text("Profit \((job.amount - spentOnJob).money)\(job.amount > 0 ? " · \(Int(((job.amount - spentOnJob) / job.amount * 100).rounded()))%" : "")").bold() }
+                HStack { Text("Job expenses \(spentOnJob.money)"); Spacer(); Text("Profit \((job.amount - spentOnJob).money)\(job.amount > 0 ? " · \(((job.amount - spentOnJob) / job.amount).wholePercent)" : "")").bold() }
                     .font(.caption).foregroundStyle(.secondary)
             }
             JobTaxSetAsideRow(job: job, decisions: job.jobID.flatMap { decisions[$0.uuidString] } ?? [], rate: rates[JobTaxSetAside.year(of: job)] ?? 0)
@@ -606,7 +606,7 @@ struct JobProfitCard: View {
                 Text("When a job pays, tag its business expenses to it (Add › Business › For job) to see what each one really earned.").font(.subheadline).foregroundStyle(.secondary)
             } else {
                 HStack { ReportMetric(label: "AVG PROFIT / JOB", value: totals.averageProfit); ReportMetric(label: "JOB EXPENSES", value: totals.expenses) }
-                if let best = totals.best { Text("Most profitable: \(best.title), \(best.profit.money)\(best.margin.map { " (\(Int(($0 * 100).rounded()))%)" } ?? "")").font(.subheadline) }
+                if let best = totals.best { Text("Most profitable: \(best.title), \(best.profit.money)\(best.margin.map { " (\($0.wholePercent))" } ?? "")").font(.subheadline) }
                 ForEach(jobs.prefix(5)) { job in
                     HStack { VStack(alignment: .leading) { Text(job.title).font(.subheadline.bold()); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }
                         Spacer(); VStack(alignment: .trailing) { Text(job.profit.money).font(.subheadline.bold()); Text("of \(job.gross.money)").font(.caption).foregroundStyle(.secondary) } }
@@ -626,7 +626,7 @@ struct GoalsView: View {
     @State private var editing: SavingsGoal?
     var body: some View { ScrollView { VStack(alignment: .leading, spacing: 18) {
         Text("Goals").font(.largeTitle.bold()); Text("Savings is a promise to your future self.").foregroundStyle(.secondary)
-        ForEach(goals) { goal in VStack(alignment: .leading, spacing: 14) { Image(systemName: goal.icon).font(.title).foregroundStyle(Color.marginInk); Text(goal.name).font(.title2.bold()); Text("\(goal.saved.money) saved of \(goal.target.money)"); ProgressView(value: goal.target > 0 ? min(goal.saved/goal.target, 1) : 1).tint(.marginLime).scaleEffect(y: 2); Text("\(goal.target > 0 ? Int(goal.saved/goal.target*100) : 100)% complete").font(.caption.bold()).foregroundStyle(.secondary)
+        ForEach(goals) { goal in VStack(alignment: .leading, spacing: 14) { Image(systemName: goal.icon).font(.title).foregroundStyle(Color.marginInk); Text(goal.name).font(.title2.bold()); Text("\(goal.saved.money) saved of \(goal.target.money)"); ProgressView(value: goal.target > 0 ? min(goal.saved/goal.target, 1) : 1).tint(.marginLime).scaleEffect(y: 2); Text("\((goal.target > 0 ? goal.saved / goal.target : 1).wholePercent) complete").font(.caption.bold()).foregroundStyle(.secondary)
             Button("Update progress") { editing = goal }.buttonStyle(.bordered).tint(.marginInk) }.marginCard() }
     }.padding() }.background(Color.marginCream.ignoresSafeArea()).navigationBarHidden(true)
         .sheet(item: $editing) { GoalEditView(goal: $0) } }
@@ -676,7 +676,8 @@ struct TransactionRow: View {
 
 struct AddEntryView: View {
     @Environment(\.dismiss) private var dismiss; @Environment(\.modelContext) private var context
-    let categories: [BudgetCategory]
+    @Query private var categories: [BudgetCategory]
+    @State private var saveError: String?
     let transactions: [Transaction]
     @Query private var rules: [MerchantRule]
     @State private var type = 0
@@ -702,7 +703,12 @@ struct AddEntryView: View {
             Section("Expense") { TextField("Merchant or description", text: $title); TextField("Amount", text: $amount).keyboardType(.decimalPad); DatePicker("Date", selection: $date, displayedComponents: .date) }
             Section("Ledger") {
                 Picker("Account", selection: $scope) { Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented)
-                Picker("Category", selection: Binding(get: { category }, set: { category = $0; categoryPicked = true })) { ForEach(categoryOptions, id: \.self) { Text($0).tag($0) } }
+                if categoryOptions.isEmpty {
+                    Text("Your categories will appear when your existing budget syncs. If you’re starting fresh, choose a starter budget to log this expense.").font(.caption)
+                    Button("Use the starter budget") { StarterBudget.insert(into: context) }
+                } else {
+                    Picker("Category", selection: Binding(get: { category }, set: { category = $0; categoryPicked = true })) { ForEach(categoryOptions, id: \.self) { Text($0).tag($0) } }
+                }
                 if scope == "personal" { Toggle("This was necessary", isOn: $essential) }
                 if scope == "business", !recentJobs.isEmpty {
                     Picker("For job", selection: $jobID) {
@@ -718,7 +724,11 @@ struct AddEntryView: View {
         Section { Button("Save entry") { saveEntry() }.frame(maxWidth: .infinity).bold().disabled(!canSave) }
     }.numberPadDone().navigationTitle(type == 0 ? "Add expense" : "Log intervention income").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         .onAppear(perform: resetCategoryIfNeeded).onChange(of: scope) { resetCategoryIfNeeded(); applyRememberedCategory() }
+        .onChange(of: personalCategoryNames) { resetCategoryIfNeeded(); applyRememberedCategory() }
         .onChange(of: title) { applyRememberedCategory() }
+        .alert("Couldn’t save entry", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK") { saveError = nil }
+        } message: { Text(saveError ?? "") }
     } }
     /// Keeps the category valid for the chosen ledger, so a business expense can't be saved as "Groceries".
     /// A category the app had to replace (switching ledgers) isn't the person's choice any more.
@@ -731,14 +741,23 @@ struct AddEntryView: View {
     private func saveEntry() {
         guard canSave else { return }
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if type == 0, let value = Double(moneyInput: amount) {
-            context.insert(Transaction(title: name, amount: value, date: date, category: category, isEssential: scope == "personal" ? essential : true, ledgerScope: scope, jobID: scope == "business" ? jobID : nil))
-            MerchantRule.learn(title: name, scope: scope, category: category, rules: rules, in: context)
-        } else if let grossValue = Double(moneyInput: gross) {
-            let jobID = UUID()
-            context.insert(Transaction(title: name, amount: grossValue, date: grossDate, category: "Intervention income", isIncome: true, ledgerScope: "business", incomeKind: "gross", jobID: jobID))
-            if let netValue = Double(moneyInput: net) { context.insert(Transaction(title: name, amount: netValue, date: netDate, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: jobID)) }
+        // Commit this entry and its learned rule together. A failed save can be retried
+        // without leaving duplicate pending inserts in the app's shared context.
+        let writer = ModelContext(context.container)
+        writer.autosaveEnabled = false
+        do {
+            if type == 0, let value = Double(moneyInput: amount) {
+                writer.insert(Transaction(title: name, amount: value, date: date, category: category, isEssential: scope == "personal" ? essential : true, ledgerScope: scope, jobID: scope == "business" ? jobID : nil))
+                MerchantRule.learn(title: name, scope: scope, category: category, rules: try writer.fetch(FetchDescriptor<MerchantRule>()), in: writer)
+            } else if let grossValue = Double(moneyInput: gross) {
+                let jobID = UUID()
+                writer.insert(Transaction(title: name, amount: grossValue, date: grossDate, category: "Intervention income", isIncome: true, ledgerScope: "business", incomeKind: "gross", jobID: jobID))
+                if let netValue = Double(moneyInput: net) { writer.insert(Transaction(title: name, amount: netValue, date: netDate, category: "Owner transfer", isIncome: true, ledgerScope: "personal", incomeKind: "net", jobID: jobID)) }
+            }
+            try writer.save()
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
         }
-        try? context.save(); dismiss()
     }
 }

@@ -65,7 +65,7 @@ struct RecurringChargesSection: View {
                          : charge.nextDate < Calendar.current.startOfDay(for: .now) ? "Expected around \(charge.nextDate.formatted(date: .abbreviated, time: .omitted)); not charged yet"
                          : "Next around \(charge.nextDate.formatted(date: .abbreviated, time: .omitted))")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Not recurring") { ignore(charge.key) }.font(.caption.bold()).tint(.marginInk)
+                    Button("Not recurring") { ignore(charge.id) }.font(.caption.bold()).tint(.marginInk)
                 }.marginCard()
             }
         }

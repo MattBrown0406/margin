@@ -2,6 +2,7 @@ import Foundation
 
 extension Double {
     var money: String { formatted(.currency(code: "USD").precision(.fractionLength(0))) }
+    var wholePercent: String { formatted(.percent.precision(.fractionLength(0))) }
     /// Exact amount for individual transactions, where rounding to whole dollars would misstate them.
     var moneyExact: String { formatted(.currency(code: "USD")) }
 
@@ -41,9 +42,12 @@ extension Double {
               // A grouped number can't start with a 0 group: "0,001" or "0.005" is a typo, not a thousand.
               groups.count == 1 || (head.count <= 3 && head != "0" && groups.dropFirst().allSatisfy { $0.count == 3 }) else { return nil }
 
-        guard let value = Double(groups.joined() + (fraction.isEmpty ? "" : "." + fraction)), value.isFinite else { return nil }
-        let cents = (value * 100).rounded() / 100
+        // Round the decimal text before converting to Double (1.005 is exactly 101 cents).
+        let centDigits = fraction.prefix(2)
+        guard var cents = UInt64(groups.joined() + String(centDigits) + String(repeating: "0", count: 2 - centDigits.count)),
+              cents < (1 << 52) else { return nil }
+        if fraction.dropFirst(2).first.map({ $0 >= "5" }) == true { cents += 1 }
         guard cents > 0 else { return nil }
-        self = cents
+        self = Double(cents) / 100
     }
 }

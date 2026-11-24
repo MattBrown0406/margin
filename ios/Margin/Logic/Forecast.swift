@@ -59,10 +59,13 @@ enum CashFlowForecast {
             let graceStart = calendar.date(byAdding: .day, value: -overdueGraceDays, to: now) ?? .distantPast
             let overdue = offset == 0 ? booked.filter { $0.expectedDate < current && $0.expectedDate >= graceStart } : []
             let jobs = (overdue + inMonth).sorted { $0.expectedDate < $1.expectedDate }
-            let received = entries.filter { $0.isNet && calendar.isSameMonth($0.date, start) }.total
+            let transfers = entries.filter { $0.isNet && calendar.isSameMonth($0.date, start) }
+            let endOfToday = calendar.endOfDay(for: now)
+            let received = transfers.filter { $0.date < endOfToday }.total
+            let scheduled = transfers.filter { $0.date >= endOfToday }.total
             let expectedSetAside = jobs.filter { !$0.grossReceived }.reduce(0) { $0 + max(0, $1.expectedGross) } * min(max(setAsideRate, 0), 1)
             let cover = min(max(0, taxLine), (setAsideByMonth[calendar.monthKey(for: start)] ?? 0) + expectedSetAside)
-            let month = ForecastMonth(monthStart: start, receivedNet: received, expectedNet: jobs.reduce(0) { $0 + $1.expectedNet },
+            let month = ForecastMonth(monthStart: start, receivedNet: received, expectedNet: scheduled + jobs.reduce(0) { $0 + $1.expectedNet },
                                       planned: max(0, plannedMonthly - cover), jobs: jobs, overdueJobs: overdue, cumulative: 0,
                                       carriedIn: offset == 0 ? max(0, carriedIn) : 0)
             running += month.gap
@@ -171,10 +174,10 @@ enum CashFlowForecast {
     /// that recorded at least one transfer. Used to pre-fill a booked job's expected Net.
     static func historicalNetRate(entries: [LedgerEntry], now: Date, calendar: Calendar = .current) -> Double? {
         let cutoff = calendar.date(byAdding: .month, value: -12, to: now) ?? .distantPast
-        let jobs = entries.filter { $0.isGross && $0.jobID != nil && $0.date >= cutoff }
+        let jobs = entries.filter { $0.isGross && $0.jobID != nil && $0.date >= cutoff && $0.date < calendar.endOfDay(for: now) }
         var gross = 0.0, net = 0.0
         for job in jobs {
-            let transferred = entries.filter { $0.isNet && $0.jobID == job.jobID }.total
+            let transferred = entries.filter { $0.isNet && $0.jobID == job.jobID && $0.date < calendar.endOfDay(for: now) }.total
             guard transferred > 0 else { continue }
             gross += job.amount; net += transferred
         }

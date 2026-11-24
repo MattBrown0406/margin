@@ -9,8 +9,8 @@ const json = (res, status, body) => { const data = JSON.stringify(body); res.wri
 const cleanText = (value, max = 100) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 async function body(req) { let size = 0, chunks = []; for await (const chunk of req) { size += chunk.length; if (size > 32768) throw httpError(413, 'Request body too large'); chunks.push(chunk); } if (!chunks.length) return {}; try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) ?? {}; } catch { throw httpError(400, 'Invalid JSON'); } }
-const mapAccount = a => ({ id: a.account_id, name: cleanText(a.name), officialName: cleanText(a.official_name), type: a.type, subtype: a.subtype, mask: cleanText(a.mask, 8), currentBalance: a.balances?.current ?? null, availableBalance: a.balances?.available ?? null, currency: a.balances?.iso_currency_code || 'USD' });
-const mapTransaction = t => ({ id: t.transaction_id, accountId: t.account_id, name: cleanText(t.merchant_name || t.name), amount: t.amount, date: t.authorized_date || t.date, pending: Boolean(t.pending), category: t.personal_finance_category?.primary || 'GENERAL_MERCHANDISE' });
+const mapAccount = a => ({ id: a.account_id, name: cleanText(a.name), officialName: cleanText(a.official_name), type: a.type, subtype: a.subtype, mask: cleanText(a.mask, 8), currentBalance: a.balances?.current ?? null, availableBalance: a.balances?.available ?? null, currency: a.balances?.iso_currency_code || a.balances?.unofficial_currency_code || 'USD' });
+const mapTransaction = t => ({ id: t.transaction_id, accountId: t.account_id, name: cleanText(t.merchant_name || t.name), amount: t.amount, currency: t.iso_currency_code || t.unofficial_currency_code || undefined, date: t.authorized_date || t.date, pending: Boolean(t.pending), category: t.personal_finance_category?.primary || 'GENERAL_MERCHANDISE' });
 // Plaid no longer knows this Item, so there is nothing left to revoke remotely.
 const ALREADY_REMOVED = new Set(['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN']);
 // Plaid-style error codes only; numeric or system codes (23, ENOTDIR) never reach a client.
@@ -119,7 +119,14 @@ export function createApp({ config, plaid, store, apple = null, appleTokens = nu
         // An update cut off at the page cap resumes from its cursor but restarts from where that update began.
         try { synced = await plaid.syncAll(accessToken, startCursor, 'paginationStart' in item ? item.paginationStart : startCursor); }
         catch (error) { if (error.code === 'ITEM_LOGIN_REQUIRED') await store.updateItem(userId, itemId, { requiresAttention: true }); throw error; }
-        const result = await store.applySync(userId, itemId, { ...synced, startCursor, accounts: synced.accounts?.map(mapAccount) });
+        // Transaction pages list only accounts with activity. Refresh the complete inventory at
+        // the end of a sync so an idle savings or investment account stays in net worth.
+        let accounts = synced.accounts?.map(mapAccount), completeAccounts = false;
+        if (!synced.hasMore) {
+          try { accounts = (await plaid.accounts(accessToken)).accounts.map(mapAccount); completeAccounts = true; }
+          catch { /* Keep the complete cached list and apply any balances from the pages. */ }
+        }
+        const result = await store.applySync(userId, itemId, { ...synced, startCursor, accounts, completeAccounts });
         const transactions = result.transactions.map(mapTransaction).sort((a, b) => String(b.date).localeCompare(String(a.date)));
         return json(res, 200, { added: result.added, modified: result.modified, removed: result.removed, hasMore: result.hasMore, accounts: result.accounts, transactions });
       }

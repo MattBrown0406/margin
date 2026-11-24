@@ -18,8 +18,8 @@ struct RecurringCharge: Equatable, Identifiable {
         var minimumCharges: Int { self == .quarterly || self == .annual ? 2 : 3 }
     }
 
-    /// Normalized merchant name; also the key used to dismiss it.
-    var id: String { key }
+    /// A merchant may have independent subscriptions in each ledger.
+    var id: String { "\(ledgerScope)|\(key)" }
     var key: String
     var name: String
     var ledgerScope: String
@@ -73,7 +73,12 @@ enum RecurringDetector {
         let since = calendar.date(byAdding: .day, value: -lookbackDays, to: now) ?? .distantPast
         let expenses = entries.filter { !$0.isIncome && $0.amount > 0 && $0.date >= since && $0.date < calendar.endOfDay(for: now) }
         var found: [RecurringCharge] = []
-        for (key, group) in Dictionary(grouping: expenses, by: { merchantKey($0.title) }) where !key.isEmpty && !ignoredKeys.contains(key) {
+        struct Merchant: Hashable { let key: String; let scope: String }
+        let groups = Dictionary(grouping: expenses) { Merchant(key: merchantKey($0.title), scope: $0.ledgerScope) }
+        for (merchant, group) in groups {
+            let key = merchant.key
+            // Older dismissals stored just the merchant name and applied to both ledgers.
+            guard !key.isEmpty, !ignoredKeys.contains(key), !ignoredKeys.contains("\(merchant.scope)|\(key)") else { continue }
             // One charge per day (a same-day split or duplicate isn't a new cycle).
             let byDay: [(day: Date, amount: Double, item: LedgerEntry)] = Dictionary(grouping: group) { calendar.startOfDay(for: $0.date) }
                 .map { (day: $0.key, amount: $0.value.total, item: $0.value[0]) }.sorted { $0.day < $1.day }
@@ -83,7 +88,7 @@ enum RecurringDetector {
             guard let cadence = RecurringCharge.Cadence.allCases.first(where: { abs(gap - $0.days.typical) <= $0.days.tolerance }),
                   byDay.count >= cadence.minimumCharges,
                   // Most gaps must fit the cadence, so a few random visits to the same shop don't count.
-                  Double(gaps.filter { abs($0 - cadence.days.typical) <= cadence.days.tolerance }.count) >= (Double(gaps.count) * 0.75).rounded(.down)
+                  Double(gaps.filter { abs($0 - cadence.days.typical) <= cadence.days.tolerance }.count) >= Double(gaps.count) * 0.75
             else { continue }
             let amounts = byDay.map(\.amount), typical = median(amounts)
             guard typical > 0, let last = byDay.last else { continue }

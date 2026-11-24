@@ -104,7 +104,11 @@ enum NetAssignment {
     static func isFromNet(_ kind: String) -> Bool { AllocationKinds.isFromNet(kind) }
 
     static func monthNet(_ transactions: [Transaction], now: Date = .now) -> Double {
-        transactions.filter { $0.isIncome && $0.incomeKind == "net" && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: now, toGranularity: .month) }.reduce(0) { $0 + $1.amount }
+        monthNet(personalNets(transactions), now: now)
+    }
+    static func monthNet(_ nets: [(date: Date, amount: Double)], now: Date = .now) -> Double {
+        let calendar = Calendar.current, start = calendar.startOfMonth(for: now), end = calendar.endOfDay(for: now)
+        return nets.filter { $0.date >= start && $0.date < end }.reduce(0) { $0 + $1.amount }
     }
     static func assignedThisMonth(_ allocations: [NetAllocation], now: Date = .now) -> [NetAllocation] {
         let key = Calendar.current.monthKey(for: now)

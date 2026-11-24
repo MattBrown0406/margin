@@ -24,7 +24,7 @@ const own = (object, key) => (object && Object.hasOwn(object, key) ? object[key]
 const writableKey = key => { if (typeof key !== 'string' || !key || key in Object.prototype) throw Object.assign(new Error('Invalid id'), { status: 400 }); return key; };
 // Only what the app is shown is kept (see mapTransaction in app.js); Plaid's location, payment and counterparty
 // details are dropped. The privacy policy lists these fields.
-const storedFields = t => ({ transaction_id: t.transaction_id, account_id: t.account_id, merchant_name: t.merchant_name ?? null, name: t.name ?? null, amount: t.amount, date: t.date, authorized_date: t.authorized_date ?? null, pending: Boolean(t.pending), personal_finance_category: t.personal_finance_category?.primary ? { primary: t.personal_finance_category.primary } : null });
+const storedFields = t => ({ transaction_id: t.transaction_id, account_id: t.account_id, merchant_name: t.merchant_name ?? null, name: t.name ?? null, amount: t.amount, iso_currency_code: t.iso_currency_code ?? undefined, unofficial_currency_code: t.unofficial_currency_code ?? undefined, date: t.date, authorized_date: t.authorized_date ?? null, pending: Boolean(t.pending), personal_finance_category: t.personal_finance_category?.primary ? { primary: t.personal_finance_category.primary } : null });
 const newUser = () => ({ items: {}, transactions: {} });
 const generationOf = (data, userId) => { const value = own(data.sessionGenerations, userId); return Number.isSafeInteger(value) && value >= 0 ? value : 0; };
 const deletingError = () => Object.assign(new Error('Account is being deleted'), { status: 409 });
@@ -56,11 +56,56 @@ export class FileStore {
   async saveItem(userId, item, sessionGen, { maxItems = Infinity } = {}) { return this.update(data => { if (!isCurrentSession(sessionGen, generationOf(data, userId))) throw sessionEnded(); if (own(data.users, userId)?.deleting) throw deletingError(); if (Object.keys(own(data.users, userId)?.items || {}).length >= maxItems && !own(own(data.users, userId)?.items, item.itemId)) throw Object.assign(new Error(`You can connect up to ${maxItems} banks. Disconnect one to add another.`), { status: 409 }); if (!own(data.users, userId)) data.users[writableKey(userId)] = newUser(); data.users[userId].items[writableKey(item.itemId)] = { institutionName: item.institutionName, cursor: null, accounts: item.accounts || [], token: encryptToken(item.accessToken, this.key), linkedAt: new Date().toISOString() }; return data.users[userId].items[item.itemId]; }); }
   async getUser(userId) { const data = await this.read(); return own(data.users, userId) || { items: {}, transactions: {} }; }
   async getAccessToken(userId, itemId) { const user = await this.getUser(userId), item = own(user.items, itemId); if (!item) throw Object.assign(new Error('Bank connection not found'), { status: 404 }); return decryptToken(item.token, this.key); }
-  // While an update is unfinished (hasMore), the ids it saved are kept in paginationIds: a restarted result
-  // (Plaid's mutation-during-pagination restart) replaces them, so a transaction removed meanwhile can't linger.
-  // result.startCursor is the cursor the sync began from. If another sync of this Item finished first, the cursor has
-  // moved on and this (older) result is dropped rather than rolling the Item back to stale data.
-  async applySync(userId, itemId, result) { return this.update(data => { const user = own(data.users, userId); if (!own(user?.items, itemId)) throw Object.assign(new Error('Bank connection not found'), { status: 404 }); const current = user.items[itemId]; const stale = 'startCursor' in result && (current.cursor ?? null) !== (result.startCursor ?? null); if (stale) return { added: 0, modified: 0, removed: 0, hasMore: 'paginationStart' in current, accounts: current.accounts, transactions: Object.values(user.transactions).filter(t => t.margin_item_id === itemId) }; if (result.restarted && Array.isArray(current.paginationIds)) { for (const id of current.paginationIds) delete user.transactions[id]; current.paginationIds = []; } for (const t of result.added) user.transactions[t.transaction_id] = { ...storedFields(t), margin_item_id: itemId }; for (const t of result.modified) user.transactions[t.transaction_id] = { ...storedFields(t), margin_item_id: itemId }; for (const t of result.removed) delete user.transactions[t.transaction_id]; const item = user.items[itemId]; if (result.hasMore) { if (!('paginationStart' in item)) item.paginationStart = result.startCursor ?? null; item.paginationIds = [...(item.paginationIds || []), ...result.added.map(t => t.transaction_id), ...result.modified.map(t => t.transaction_id)]; } else { delete item.paginationStart; delete item.paginationIds; } item.cursor = result.cursor; item.lastSyncedAt = new Date().toISOString(); item.requiresAttention = false; if (result.accounts) item.accounts = result.accounts; return { added: result.added.length, modified: result.modified.length, removed: result.removed.length, hasMore: Boolean(result.hasMore), accounts: item.accounts, transactions: Object.values(user.transactions).filter(t => t.margin_item_id === itemId) }; }); }
+  async applySync(userId, itemId, result) {
+    return this.update(data => {
+      const user = own(data.users, userId), item = own(user?.items, itemId);
+      if (!item) throw Object.assign(new Error('Bank connection not found'), { status: 404 });
+      const transactions = () => Object.values(user.transactions).filter(t => t.margin_item_id === itemId);
+      if ('startCursor' in result && (item.cursor ?? null) !== (result.startCursor ?? null)) {
+        return { added: 0, modified: 0, removed: 0, hasMore: 'paginationStart' in item, accounts: item.accounts, transactions: transactions() };
+      }
+
+      if (result.restarted) {
+        // Older stores only recorded the IDs written by the unfinished update.
+        for (const id of item.paginationIds ?? []) delete user.transactions[id];
+        for (const [id, original] of Object.entries(item.paginationOriginals ?? {})) {
+          if (original === null) delete user.transactions[id];
+          else user.transactions[id] = original;
+        }
+        delete item.paginationIds;
+        delete item.paginationOriginals;
+      }
+
+      if (result.hasMore) {
+        if (!('paginationStart' in item)) item.paginationStart = result.startCursor ?? null;
+        // Save the first value touched across all chunks. A restart can undo a deletion
+        // or modification as well as discard an addition.
+        const originals = item.paginationOriginals ??= {};
+        for (const change of [...result.added, ...result.modified, ...result.removed]) {
+          const id = writableKey(change.transaction_id);
+          if (!Object.hasOwn(originals, id) && !item.paginationIds?.includes(id)) originals[id] = own(user.transactions, id) ?? null;
+        }
+      } else {
+        delete item.paginationStart;
+        delete item.paginationIds;
+        delete item.paginationOriginals;
+      }
+      for (const t of [...result.added, ...result.modified]) {
+        user.transactions[writableKey(t.transaction_id)] = { ...storedFields(t), margin_item_id: itemId };
+      }
+      for (const t of result.removed) delete user.transactions[t.transaction_id];
+      item.cursor = result.cursor;
+      item.lastSyncedAt = new Date().toISOString();
+      item.requiresAttention = false;
+      if (result.completeAccounts) item.accounts = result.accounts;
+      else if (result.accounts?.length) {
+        const accounts = new Map(item.accounts.map(account => [account.id, account]));
+        for (const account of result.accounts) accounts.set(account.id, account);
+        item.accounts = [...accounts.values()];
+      }
+      return { added: result.added.length, modified: result.modified.length, removed: result.removed.length, hasMore: Boolean(result.hasMore), accounts: item.accounts, transactions: transactions() };
+    });
+  }
   async updateItem(userId, itemId, changes) { return this.update(data => { const item = own(own(data.users, userId)?.items, itemId); if (!item) return null; Object.assign(item, changes); return item; }); }
   // Step one of account deletion: from here on saveItem refuses, so no Item can appear behind the Plaid sweep.
   // Creates the record if needed, so even a user with no data is protected.
