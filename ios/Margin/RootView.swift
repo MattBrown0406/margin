@@ -182,7 +182,7 @@ struct TodayView: View {
     @State private var editingTx: Transaction?
     @Query private var allocations: [NetAllocation]
     @Query private var settingsList: [FinanceSettings]
-    private var personalExpenses: [Transaction] { transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
+    private var personalExpenses: [Transaction] { transactions.posted(inMonthThrough: referenceDay).filter { !$0.isIncome && $0.ledgerScope == "personal" } }
     private var monthExpenses: Double { personalExpenses.reduce(0) { $0 + $1.amount } }
     private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: referenceDay) }
     private var shortfall: ForecastMonth? {
@@ -362,13 +362,14 @@ struct InterventionIncomeView: View {
     @Query private var settingsList: [FinanceSettings]
     let transactions: [Transaction]
     @State private var selectedGross: Transaction?
-    private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
+    private var month: [Transaction] { transactions.posted(inMonthThrough: .now) }
     private func isThisMonth(_ date: Date) -> Bool { Calendar.current.isDate(date, equalTo: .now, toGranularity: .month) }
     /// This month's jobs, plus recent jobs still waiting on a personal transfer — otherwise a job paid
     /// late in a month vanishes on the 1st and its Net can never be recorded.
     private var recentGross: [Transaction] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .distantPast
-        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.date >= cutoff }.sorted { $0.date > $1.date }
+        let end = Calendar.current.endOfDay(for: .now)
+        return transactions.filter { $0.isIncome && $0.incomeKind == "gross" && $0.date >= cutoff && $0.date < end }.sorted { $0.date > $1.date }
     }
     private var grossEntries: [Transaction] { recentGross.filter { isThisMonth($0.date) || $0.netTransfers(in: transactions).isEmpty } }
     /// Older jobs that already have a transfer stay reachable so a later installment can be recorded.
@@ -396,10 +397,11 @@ struct InterventionIncomeView: View {
     }
 
     private func jobCard(_ job: Transaction, rates: [Int: Double], decisions: [String: [NetAllocation]]) -> some View {
-        let transfers = job.netTransfers(in: transactions)
+        let end = Calendar.current.endOfDay(for: .now)
+        let transfers = job.netTransfers(in: transactions).filter { $0.date < end }
         return VStack(alignment: .leading, spacing: 10) {
             HStack { VStack(alignment: .leading) { Text(job.title).font(.headline); Text(job.date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text(job.amount.money).bold() }
-            let spentOnJob = transactions.filter { !$0.isIncome && $0.ledgerScope == "business" && $0.jobID != nil && $0.jobID == job.jobID }.reduce(0) { $0 + $1.amount }
+            let spentOnJob = transactions.filter { $0.date < end && !$0.isIncome && $0.ledgerScope == "business" && $0.jobID != nil && $0.jobID == job.jobID }.reduce(0) { $0 + $1.amount }
             if spentOnJob != 0 {
                 HStack { Text("Job expenses \(spentOnJob.money)"); Spacer(); Text("Profit \((job.amount - spentOnJob).money)\(job.amount > 0 ? " · \(((job.amount - spentOnJob) / job.amount).wholePercent)" : "")").bold() }
                     .font(.caption).foregroundStyle(.secondary)
@@ -478,7 +480,7 @@ struct BudgetLineRow: View {
     @Bindable var category: BudgetCategory
     let transactions: [Transaction]
     @State private var editing = false
-    private var spent: Double { transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.category == category.name && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) }.reduce(0) { $0 + $1.amount } }
+    private var spent: Double { transactions.posted(inMonthThrough: .now).filter { !$0.isIncome && $0.ledgerScope == "personal" && $0.category == category.name }.reduce(0) { $0 + $1.amount } }
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack { Label(category.name, systemImage: category.icon).font(.subheadline.bold()); Spacer(); Button(category.monthlyLimit.money) { editing = true }.buttonStyle(.bordered) }
@@ -576,7 +578,7 @@ struct ActivityView: View {
 struct ReportsView: View {
     let transactions: [Transaction]; let categories: [BudgetCategory]
     @State private var scope = "all"; @State private var exportDocument: MarginXLSXDocument?; @State private var exporting = false
-    private var month: [Transaction] { transactions.filter { Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
+    private var month: [Transaction] { transactions.posted(inMonthThrough: .now) }
     private var shown: [Transaction] { month.filter { scope == "all" || $0.ledgerScope == scope } }
     private var gross: Double { month.filter { $0.incomeKind == "gross" }.reduce(0) { $0 + $1.amount } }
     private var net: Double { month.filter { $0.incomeKind == "net" }.reduce(0) { $0 + $1.amount } }

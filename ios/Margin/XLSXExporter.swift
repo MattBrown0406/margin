@@ -41,7 +41,10 @@ enum XLSXExporter {
     static func makeWorkbook(transactions: [Transaction], categories: [BudgetCategory], reportMonth: Date = .now,
                              close: Reconciliation? = nil) -> Data {
         let calendar = Calendar.current
-        let month = transactions.filter { calendar.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
+        let periodEnd = calendar.dateInterval(of: .month, for: reportMonth)?.end ?? reportMonth
+        let cutoff = close == nil ? calendar.endOfDay(for: reportMonth) : periodEnd
+        let reportTransactions = transactions.filter { $0.date < cutoff }
+        let month = reportTransactions.filter { calendar.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
         let grossRows = month.filter { $0.isIncome && $0.incomeKind == "gross" }.sorted { $0.date < $1.date }
         let expenses = month.filter { !$0.isIncome }.sorted { $0.date < $1.date }
         let gross = grossRows.reduce(0) { $0 + $1.amount }
@@ -87,9 +90,6 @@ enum XLSXExporter {
             [.text("Note"), .text("Gross is money received from interventions. Net is money actually transferred from the business account to the personal account.")]
         ]
 
-        let periodEnd = calendar.dateInterval(of: .month, for: reportMonth)?.end ?? reportMonth
-        let cutoff = close == nil ? calendar.endOfDay(for: reportMonth) : periodEnd
-        let reportTransactions = transactions.filter { $0.date < cutoff }
         let entries = reportTransactions.map(\.ledgerEntry), year = calendar.component(.year, from: reportMonth)
         var jobRows: [[WorkbookCell]] = [[.text("Date received"), .text("Job"), .text("Gross"), .text("Job expenses"), .text("Profit"), .text("Margin"), .text("Net transferred")]]
         for job in JobProfit.summaries(entries: entries, year: year, calendar: calendar).reversed() {

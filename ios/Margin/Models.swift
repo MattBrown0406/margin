@@ -137,6 +137,13 @@ import SwiftData
     }
 }
 
+extension Array where Element == Transaction {
+    func posted(inMonthThrough day: Date, calendar: Calendar = .current) -> [Transaction] {
+        let period = calendar.startOfMonth(for: day)..<calendar.endOfDay(for: day)
+        return filter { period.contains($0.date) }
+    }
+}
+
 extension Transaction {
     var ledgerEntry: LedgerEntry {
         LedgerEntry(date: date, amount: amount, category: category, isIncome: isIncome, ledgerScope: ledgerScope, incomeKind: incomeKind, jobID: jobID, title: title)
