@@ -124,7 +124,7 @@ private struct CloseReview: View {
                         }
                         Spacer(); Text((scope.movement(row.ledgerEntry) ?? 0).moneyExact)
                     }
-                }.buttonStyle(.plain).accessibilityValue(matched ? "Matched" : "Unmatched")
+                }.buttonStyle(.plain).accessibilityIdentifier("match-\(scope.rawValue)-\(row.id.uuidString)").accessibilityValue(matched ? "Matched" : "Unmatched")
             }
         } header: { Text("Match entries to your statement") } footer: { Text("A missing or incorrect entry can be added or edited in Activity and Add. Return here to review the difference.") }
         Section {

@@ -206,7 +206,7 @@ struct TodayView: View {
                     Divider().overlay(.white.opacity(0.2))
                     HStack { Label("\(safe.daysLeft) days left", systemImage: "calendar"); Spacer(); Text("\(safe.flexibleLeft.money) flexible") }.font(.subheadline).foregroundStyle(.white.opacity(0.85))
                 }.padding(22).background(Color.marginInk, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                }.buttonStyle(.plain).accessibilityHint("Shows changes since yesterday")
+                }.buttonStyle(.plain).accessibilityIdentifier("safeToSpendDetails").accessibilityHint("Shows changes since yesterday")
                 Button { showAfford = true } label: {
                     HStack(spacing: 13) {
                         Image(systemName: "questionmark.bubble.fill").frame(width: 42, height: 42).background(Color.marginLime.opacity(0.5), in: RoundedRectangle(cornerRadius: 13))
