@@ -11,6 +11,8 @@ struct MarginXLSXDocument: FileDocument {
         data = XLSXExporter.makeWorkbook(transactions: transactions, categories: categories)
     }
 
+    init(data: Data) { self.data = data }
+
     init(configuration: ReadConfiguration) throws {
         data = configuration.file.regularFileContents ?? Data()
     }
@@ -31,9 +33,15 @@ private struct WorkbookSheet {
 }
 
 enum XLSXExporter {
-    static func makeWorkbook(transactions: [Transaction], categories: [BudgetCategory]) -> Data {
+    struct Reconciliation {
+        let date: Date
+        let personal: CloseBalance
+        let business: CloseBalance
+    }
+    static func makeWorkbook(transactions: [Transaction], categories: [BudgetCategory], reportMonth: Date = .now,
+                             close: Reconciliation? = nil) -> Data {
         let calendar = Calendar.current
-        let month = transactions.filter { calendar.isDate($0.date, equalTo: .now, toGranularity: .month) }
+        let month = transactions.filter { calendar.isDate($0.date, equalTo: reportMonth, toGranularity: .month) }
         let grossRows = month.filter { $0.isIncome && $0.incomeKind == "gross" }.sorted { $0.date < $1.date }
         let expenses = month.filter { !$0.isIncome }.sorted { $0.date < $1.date }
         let gross = grossRows.reduce(0) { $0 + $1.amount }
@@ -69,7 +77,7 @@ enum XLSXExporter {
 
         let summaryRows: [[WorkbookCell]] = [
             [.text("STABILIS MONTHLY REPORT")],
-            [.text("Report month"), .text(Date.now.formatted(.dateTime.month(.wide).year()))],
+            [.text("Report month"), .text(reportMonth.formatted(.dateTime.month(.wide).year()))],
             [.text("Business gross received"), .number(gross)],
             [.text("Business expenses"), .number(businessSpend)],
             [.text("Net transferred to personal"), .number(net)],
@@ -79,7 +87,9 @@ enum XLSXExporter {
             [.text("Note"), .text("Gross is money received from interventions. Net is money actually transferred from the business account to the personal account.")]
         ]
 
-        let entries = transactions.map(\.ledgerEntry), year = calendar.component(.year, from: .now)
+        let periodEnd = calendar.dateInterval(of: .month, for: reportMonth)?.end ?? reportMonth
+        let reportTransactions = close == nil ? transactions : transactions.filter { $0.date < periodEnd }
+        let entries = reportTransactions.map(\.ledgerEntry), year = calendar.component(.year, from: reportMonth)
         var jobRows: [[WorkbookCell]] = [[.text("Date received"), .text("Job"), .text("Gross"), .text("Job expenses"), .text("Profit"), .text("Margin"), .text("Net transferred")]]
         if let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)), let end = calendar.date(byAdding: DateComponents(year: 1, second: -1), to: start) {
             for job in JobProfit.summaries(entries: entries, in: start...end).reversed() {
@@ -95,7 +105,7 @@ enum XLSXExporter {
                          [.text("31"), .text("Net profit"), .number(scheduleC.netProfit), .text("")],
                          [.text(""), .text("Prepared from your Stabilis business ledger. A starting point for your tax preparer, not tax advice."), .text(""), .text("")]]
 
-        let sheets = [
+        var sheets = [
             WorkbookSheet(name: "Summary", rows: summaryRows),
             WorkbookSheet(name: "Income & Jobs", rows: incomeRows),
             WorkbookSheet(name: "Expenses", rows: expenseRows),
@@ -104,6 +114,23 @@ enum XLSXExporter {
             WorkbookSheet(name: "Job Profit", rows: jobRows),
             WorkbookSheet(name: "Schedule C", rows: scheduleRows)
         ]
+        if let close {
+            var review: [[WorkbookCell]] = [[.text("Closed at"), .text(close.date.ISO8601Format())],
+                                            [.text("Ledger"), .text("Opening statement"), .text("Ledger movement"), .text("Ending statement"), .text("Difference")]]
+            for (name, balance) in [("Personal", close.personal), ("Business", close.business)] {
+                review.append([.text(name), .number(balance.opening), .number(balance.movement), .number(balance.ending), .number(balance.difference)])
+            }
+            review.append([.text("Every ledger entry for the month was matched to its statement. Budget amounts are the plan at close.")])
+            review.append([.text("Date"), .text("Ledger"), .text("Matched entry"), .text("Signed movement"), .text("Entry ID")])
+            for transaction in month.sorted(by: { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }) {
+                for ledger in CloseLedger.allCases {
+                    guard let amount = ledger.movement(transaction.ledgerEntry) else { continue }
+                    review.append([.text(date(transaction.date)), .text(ledger.rawValue.capitalized),
+                                   .text(transaction.title), .number(amount), .text(transaction.id.uuidString)])
+                }
+            }
+            sheets.insert(WorkbookSheet(name: "Reconciliation", rows: review), at: 0)
+        }
         return package(sheets)
     }
 

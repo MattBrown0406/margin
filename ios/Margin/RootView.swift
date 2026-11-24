@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 struct RootView: View {
     @Environment(\.modelContext) private var context
@@ -12,14 +13,15 @@ struct RootView: View {
     @Query private var allocations: [NetAllocation]
     @AppStorage("margin.seeded") private var seeded = false
     @AppStorage("margin.ledgerV2Migrated") private var ledgerV2Migrated = false
+    @State private var referenceDay = Date.now
     @State private var selectedTab = 0
     @State private var showAdd = false
 
-    private var widgetSnapshot: WidgetSnapshot { WidgetSnapshot(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: .now) }
+    private var widgetSnapshot: WidgetSnapshot { WidgetSnapshot(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: referenceDay) }
 
-    var body: some View {
+    private var tabs: some View {
         TabView(selection: $selectedTab) {
-            NavigationStack { TodayView(transactions: transactions, categories: categories, goals: goals, bookedJobs: bookedJobs) }
+            NavigationStack { TodayView(referenceDay: referenceDay, transactions: transactions, categories: categories, goals: goals, bookedJobs: bookedJobs) }
                 .tabItem { Label("Today", systemImage: "sun.max.fill") }.tag(0)
             NavigationStack { PlanView(transactions: transactions, categories: categories, bookedJobs: bookedJobs) }
                 .tabItem { Label("Plan", systemImage: "chart.pie.fill") }.tag(1)
@@ -29,23 +31,33 @@ struct RootView: View {
             NavigationStack { ReportsView(transactions: transactions, categories: categories) }
                 .tabItem { Label("Reports", systemImage: "chart.bar.doc.horizontal.fill") }.tag(4)
         }
-        .tint(.marginInk)
-        .onChange(of: selectedTab) { previous, value in if value == 2 { showAdd = true; selectedTab = previous } }
-        .sheet(isPresented: $showAdd) { AddEntryView(transactions: transactions) }
-        .task { seedAndMigrateIfNeeded() }
-        // iCloud can deliver another device's starter budget after this one seeded its own.
-        .onChange(of: categories.count) { removeSyncDuplicates() }
-        .onChange(of: goals.count) { removeSyncDuplicates() }
-        .onChange(of: financeSettings.count) { removeSyncDuplicates() }
-        .onChange(of: allocations.count) { removeSyncDuplicates() }
-        .onChange(of: transactions.count) { removeSyncDuplicates() }
-        // Keep the widget current whenever today's numbers change, and when returning to the app.
-        .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { WidgetBridge.publish(widgetSnapshot) }
-            // Reminders are rebuilt from the latest numbers whenever the app opens or goes to the background.
-            if phase == .active || phase == .background { Task { await Reminders.reschedule(context: context) } }
-        }
+    }
+
+    private var ledgerTabs: some View {
+        tabs.tint(.marginInk)
+            .onChange(of: selectedTab) { previous, value in
+                if value == 2 { showAdd = true; selectedTab = previous }
+            }
+            .sheet(isPresented: $showAdd) { AddEntryView(transactions: transactions) }
+            .task { seedAndMigrateIfNeeded() }
+            .onChange(of: [categories.count, goals.count, financeSettings.count, allocations.count, transactions.count]) {
+                removeSyncDuplicates()
+            }
+    }
+
+    var body: some View {
+        ledgerTabs
+            .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                referenceDay = Date.now
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    referenceDay = Date.now
+                    WidgetBridge.publish(widgetSnapshot)
+                }
+                if phase == .active || phase == .background { Task { await Reminders.reschedule(context: context) } }
+            }
     }
 
     private func seedAndMigrateIfNeeded() {
@@ -163,6 +175,7 @@ struct RootView: View {
 }
 
 struct TodayView: View {
+    let referenceDay: Date
     @Environment(\.modelContext) private var context
     let transactions: [Transaction]; let categories: [BudgetCategory]; let goals: [SavingsGoal]; let bookedJobs: [BookedJob]
     @State private var showAfford = false
@@ -171,7 +184,7 @@ struct TodayView: View {
     @Query private var settingsList: [FinanceSettings]
     private var personalExpenses: [Transaction] { transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var monthExpenses: Double { personalExpenses.reduce(0) { $0 + $1.amount } }
-    private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: .now) }
+    private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: referenceDay) }
     private var shortfall: ForecastMonth? {
         CashFlowForecast.firstShortfall(MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
                                                    settings: FinanceSettings.pick(settingsList), months: 3).forecast)
@@ -195,13 +208,15 @@ struct TodayView: View {
                         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(.white.opacity(0.8), lineWidth: 1))
                         .shadow(color: Color.marginInk.opacity(0.14), radius: 8, y: 4)
                 }
+                NavigationLink { SpendingExplanationView(transactions: transactions, categories: categories) } label: {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("SAFE TO SPEND TODAY").font(.caption.bold()).tracking(1.4).foregroundStyle(.white.opacity(0.65))
+                    HStack { Text("SAFE TO SPEND TODAY").font(.caption.bold()).foregroundStyle(.white.opacity(0.65)); Spacer(); Image(systemName: "chevron.right").foregroundStyle(.white) }
                     Text(safe.safeToday.money).font(.system(size: 52, weight: .bold, design: .rounded)).foregroundStyle(.white)
                     Text(safe.spentToday > 0 ? "\(safe.spentToday.money) of today’s \(safe.dailyAllowance.money) already spent" : "from your personal plan — not business revenue").foregroundStyle(.white.opacity(0.75))
                     Divider().overlay(.white.opacity(0.2))
                     HStack { Label("\(safe.daysLeft) days left", systemImage: "calendar"); Spacer(); Text("\(safe.flexibleLeft.money) flexible") }.font(.subheadline).foregroundStyle(.white.opacity(0.85))
                 }.padding(22).background(Color.marginInk, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                }.buttonStyle(.plain).accessibilityIdentifier("safeToSpendDetails").accessibilityHint("Shows changes since yesterday")
                 Button { showAfford = true } label: {
                     HStack(spacing: 13) {
                         Image(systemName: "questionmark.bubble.fill").frame(width: 42, height: 42).background(Color.marginLime.opacity(0.5), in: RoundedRectangle(cornerRadius: 13))
@@ -585,6 +600,8 @@ struct ReportsView: View {
                 LabeledContent("Retained in business", value: (gross - businessExpense - net).money)
                 LabeledContent("Personal margin", value: (net - personalExpense).money)
             }.font(.headline).marginCard()
+            NavigationLink { MonthCloseView() } label: { Label("Month-end close", systemImage: "checklist") }.buttonStyle(.bordered)
+            NavigationLink { JobQuoteView() } label: { Label("Quote a job", systemImage: "function") }.buttonStyle(.bordered)
             JobProfitCard(year: year, jobs: yearJobs, scheduleC: scheduleC)
             Picker("Ledger", selection: $scope) { Text("All").tag("all"); Text("Personal").tag("personal"); Text("Business").tag("business") }.pickerStyle(.segmented)
             ForEach(shown) { TransactionRow(tx: $0) }

@@ -13,7 +13,10 @@ struct SafeToSpend: Equatable {
     static func compute(entries: [LedgerEntry], lines: [PlanLine], now: Date, calendar: Calendar = .current) -> SafeToSpend {
         let flexibleNames = Set(lines.filter(\.isFlexible).map(\.name))
         let limit = lines.filter(\.isFlexible).reduce(0) { $0 + $1.monthlyLimit }
-        let spending = entries.filter { $0.isPersonalExpense && flexibleNames.contains($0.category) && calendar.isSameMonth($0.date, now) }
+        let tomorrow = calendar.endOfDay(for: now)
+        // Reserve known future purchases, but a future refund cannot fund anything today.
+        let spending = entries.filter { $0.isPersonalExpense && flexibleNames.contains($0.category) && calendar.isSameMonth($0.date, now)
+            && ($0.amount > 0 || $0.date < tomorrow) }
         let today = spending.filter { calendar.isDate($0.date, inSameDayAs: now) }.total
         return make(limit: limit, spentBeforeToday: spending.total - today, spentToday: today, now: now, calendar: calendar)
     }
@@ -35,6 +38,12 @@ struct WidgetSnapshot: Codable, Equatable {
     static let appGroup = "group.com.mattbrown.margin"
     static let defaultsKey = "margin.widgetSnapshot"
 
+    struct ScheduledSpend: Codable, Equatable {
+        var day: Int
+        var purchases: Double
+        var refunds: Double
+    }
+    var scheduled: [ScheduledSpend]?
     var monthStart: Date
     var day: Date
     var flexibleLimit: Double
@@ -47,7 +56,12 @@ struct WidgetSnapshot: Codable, Equatable {
         flexibleLimit = safe.flexibleLimit; spentToday = safe.spentToday
         // From the entries, not limit − flexibleLeft: flexibleLeft stops at 0, which would understate an overspend.
         let flexibleNames = Set(lines.filter(\.isFlexible).map(\.name))
-        spentBeforeToday = entries.filter { $0.isPersonalExpense && flexibleNames.contains($0.category) && calendar.isSameMonth($0.date, now) }.total - safe.spentToday
+        let tomorrow = calendar.endOfDay(for: now)
+        let spending = entries.filter { $0.isPersonalExpense && flexibleNames.contains($0.category) && calendar.isSameMonth($0.date, now) }
+        spentBeforeToday = spending.filter { $0.amount > 0 || $0.date < tomorrow }.total - safe.spentToday
+        scheduled = Dictionary(grouping: spending.filter { $0.date >= tomorrow }) { calendar.component(.day, from: $0.date) }
+            .map { key, rows in ScheduledSpend(day: key, purchases: rows.filter { $0.amount > 0 }.total, refunds: rows.filter { $0.amount < 0 }.total) }
+            .sorted { $0.day < $1.day }
     }
 
     /// The allowance at `now`, or nil when the snapshot is from another month (the app must refresh it).
@@ -55,14 +69,25 @@ struct WidgetSnapshot: Codable, Equatable {
         guard calendar.isSameMonth(monthStart, now) else { return nil }
         if calendar.isDate(day, inSameDayAs: now) { return .make(limit: flexibleLimit, spentBeforeToday: spentBeforeToday, spentToday: spentToday, now: now, calendar: calendar) }
         guard now > day else { return nil }
-        // A later day: everything recorded so far counts as "before today".
-        return .make(limit: flexibleLimit, spentBeforeToday: spentBeforeToday + spentToday, spentToday: 0, now: now, calendar: calendar)
+        let number = calendar.component(.day, from: now)
+        let due = scheduled?.first { $0.day == number }
+        let pastCredits = scheduled?.filter { $0.day < number }.reduce(0) { $0 + $1.refunds } ?? 0
+        let before = spentBeforeToday + spentToday + pastCredits - (due?.purchases ?? 0)
+        return .make(limit: flexibleLimit, spentBeforeToday: before, spentToday: (due?.purchases ?? 0) + (due?.refunds ?? 0), now: now, calendar: calendar)
     }
 
     static func load(from defaults: UserDefaults?) -> WidgetSnapshot? {
         defaults?.data(forKey: defaultsKey).flatMap { try? JSONDecoder().decode(WidgetSnapshot.self, from: $0) }
     }
+    static func previous(from defaults: UserDefaults?) -> WidgetSnapshot? {
+        defaults?.data(forKey: defaultsKey + ".previous").flatMap { try? JSONDecoder().decode(WidgetSnapshot.self, from: $0) }
+    }
     func save(to defaults: UserDefaults?) {
+        if let data = defaults?.data(forKey: Self.defaultsKey),
+           let last = try? JSONDecoder().decode(Self.self, from: data), last.day < day,
+           !Calendar.current.isDate(last.day, inSameDayAs: day) {
+            defaults?.set(data, forKey: Self.defaultsKey + ".previous")
+        }
         if let data = try? JSONEncoder().encode(self) { defaults?.set(data, forKey: Self.defaultsKey) }
     }
 }

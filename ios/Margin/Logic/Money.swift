@@ -11,8 +11,8 @@ extension Double {
     /// #1042 $750", "3 for $10", "1e3", "50¢") is rejected rather than guessed at. The decimal mark is inferred
     /// from the text: the last "." or "," is decimal unless it is the locale's grouping mark followed by exactly
     /// three digits, so a pasted "12.50" still means 12.50 in comma-decimal locales.
-    /// Returns nil for anything that isn't a positive amount of at least one cent.
-    init?(moneyInput text: String, locale: Locale = .current) {
+    /// Positive amounts must round to at least one cent. Statement and planning fields can also accept explicit zero.
+    init?(moneyInput text: String, locale: Locale = .current, allowZero: Bool = false) {
         // Only currency markers may surround the number; "5k", "50 cents" or "Invoice 1042" are rejected.
         var core = Substring(text).trimmingCharacters(in: .whitespacesAndNewlines)[...]
         for marker in ["US$", "USD", "$", "€", "£", "¥", "₹"] {
@@ -20,6 +20,10 @@ extension Double {
             if core.uppercased().hasSuffix(marker) { core = core.dropLast(marker.count) }
         }
         core = core.trimmingCharacters(in: .whitespacesAndNewlines)[...]
+        if allowZero, core.range(of: #"^0+([.,]0+)?$"#, options: .regularExpression) != nil {
+            self = 0
+            return
+        }
         let isDigit: (Character) -> Bool = { ("0"..."9").contains($0) }
         let isMark: (Character) -> Bool = { $0 == "." || $0 == "," }
         let groupingOnly: Set<Character> = [" ", "'", "\u{00A0}", "\u{202F}"]
