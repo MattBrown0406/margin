@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 struct RootView: View {
     @Environment(\.modelContext) private var context
@@ -32,25 +33,31 @@ struct RootView: View {
         }
     }
 
-    var body: some View {
+    private var ledgerTabs: some View {
         tabs.tint(.marginInk)
-        .onChange(of: selectedTab) { previous, value in if value == 2 { showAdd = true; selectedTab = previous } }
-        .sheet(isPresented: $showAdd) { AddEntryView(transactions: transactions) }
-        .task { seedAndMigrateIfNeeded() }
-        // iCloud can deliver another device's starter budget after this one seeded its own.
-        .onChange(of: categories.count) { removeSyncDuplicates() }
-        .onChange(of: goals.count) { removeSyncDuplicates() }
-        .onChange(of: financeSettings.count) { removeSyncDuplicates() }
-        .onChange(of: allocations.count) { removeSyncDuplicates() }
-        .onChange(of: transactions.count) { removeSyncDuplicates() }
-        // Keep the widget current whenever today's numbers change, and when returning to the app.
-        .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
-        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in referenceDay = .now }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { referenceDay = .now; WidgetBridge.publish(widgetSnapshot) }
-            // Reminders are rebuilt from the latest numbers whenever the app opens or goes to the background.
-            if phase == .active || phase == .background { Task { await Reminders.reschedule(context: context) } }
-        }
+            .onChange(of: selectedTab) { previous, value in
+                if value == 2 { showAdd = true; selectedTab = previous }
+            }
+            .sheet(isPresented: $showAdd) { AddEntryView(transactions: transactions) }
+            .task { seedAndMigrateIfNeeded() }
+            .onChange(of: [categories.count, goals.count, financeSettings.count, allocations.count, transactions.count]) {
+                removeSyncDuplicates()
+            }
+    }
+
+    var body: some View {
+        ledgerTabs
+            .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                referenceDay = Date.now
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    referenceDay = Date.now
+                    WidgetBridge.publish(widgetSnapshot)
+                }
+                if phase == .active || phase == .background { Task { await Reminders.reschedule(context: context) } }
+            }
     }
 
     private func seedAndMigrateIfNeeded() {

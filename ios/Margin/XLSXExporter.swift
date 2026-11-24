@@ -121,6 +121,14 @@ enum XLSXExporter {
                 review.append([.text(name), .number(balance.opening), .number(balance.movement), .number(balance.ending), .number(balance.difference)])
             }
             review.append([.text("Every ledger entry for the month was matched to its statement. Budget amounts are the plan at close.")])
+            review.append([.text("Date"), .text("Ledger"), .text("Matched entry"), .text("Signed movement"), .text("Entry ID")])
+            for transaction in month.sorted(by: { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }) {
+                for ledger in CloseLedger.allCases {
+                    guard let amount = ledger.movement(transaction.ledgerEntry) else { continue }
+                    review.append([.text(date(transaction.date)), .text(ledger.rawValue.capitalized),
+                                   .text(transaction.title), .number(amount), .text(transaction.id.uuidString)])
+                }
+            }
             sheets.insert(WorkbookSheet(name: "Reconciliation", rows: review), at: 0)
         }
         return package(sheets)
