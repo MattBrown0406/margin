@@ -21,7 +21,7 @@ struct ForecastView: View {
         CashFlowForecast.likelyPayments(for: openJobs.map(\.info), entries: entries, claimed: Set(bookedJobs.compactMap(\.paidJobID)))
     }
     private var months: [ForecastMonth] {
-        MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: FinanceSettings.pick(settingsList)).forecast
+        MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations, settings: FinanceSettings.pick(settingsList), months: 7).forecast
     }
 
     /// Paid jobs whose Net transfers so far fall short, with what's still expected — shown so it's never invisible.
@@ -34,12 +34,15 @@ struct ForecastView: View {
     }
 
     var body: some View {
-        let months = months, likely = likelyPayments, awaiting = awaitingTransfers
+        // Include the following month when a four-week delay crosses the end of the calendar.
+        let horizon = months, likely = likelyPayments, awaiting = awaitingTransfers
+        let months = Array(horizon.dropLast())
         VStack(alignment: .leading, spacing: 14) {
             Text("Booked work, projected forward. Net expected from each booked job counts in the month it should pay.").font(.subheadline).foregroundStyle(.secondary)
             NavigationLink {
                 let settings = FinanceSettings.pick(settingsList)
-                PaymentDelayView(jobs: months.flatMap(\.jobs).filter { $0.expectedNet > 0 }, entries: entries, lines: categories.map(\.planLine),
+                PaymentDelayView(jobs: months.flatMap(\.jobs).filter { $0.expectedNet > 0 }, followingMonthJobs: horizon.last?.jobs ?? [],
+                                 entries: entries, lines: categories.map(\.planLine),
                                  taxLine: settings?.taxLineName ?? "Tax reserve", ignoredMerchants: Set(settings?.ignoredRecurringKeys ?? []))
             } label: { Label("Test a late payment", systemImage: "calendar.badge.clock") }
             ForecastHeadline(months: months)

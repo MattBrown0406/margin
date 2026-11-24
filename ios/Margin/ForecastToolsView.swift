@@ -28,6 +28,7 @@ struct SpendingExplanationView: View {
 
 struct PaymentDelayView: View {
     let jobs: [BookedJobInfo]
+    let followingMonthJobs: [BookedJobInfo]
     let entries: [LedgerEntry]
     let lines: [PlanLine]
     let taxLine: String
@@ -48,9 +49,9 @@ struct PaymentDelayView: View {
                     }
                     LabeledContent("Expected personal Net", value: job.expectedNet.moneyExact)
                     Picker("Delay", selection: $weeks) { Text("2 weeks").tag(2); Text("4 weeks").tag(4) }.pickerStyle(.segmented)
-                    LabeledContent("Cash available for bills today") { TextField("USD", text: $cash).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
+                    LabeledContent("Cash available for bills today") { TextField("USD", text: $cash).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing) }
                 }
-                if let opening = planningNumber(cash) {
+                if let opening = planningNumber(cash, signed: true) {
                     result(job: job, cash: opening)
                 } else { Text("Enter the cash already available for bills. Enter 0 to start with an empty account.").font(.footnote) }
             }
@@ -78,7 +79,7 @@ struct PaymentDelayView: View {
             return bill
         }
         let scheduled = entries.filter { $0.isNet && $0.date >= threshold }.map { (date: $0.date, amount: $0.amount) }
-        let other = jobs.filter { $0.id != job.id }.map { (date: $0.expectedDate, amount: $0.expectedNet) } + scheduled
+        let other = (jobs + followingMonthJobs).filter { $0.id != job.id }.map { (date: $0.expectedDate, amount: $0.expectedNet) } + scheduled
         let baseline = PaymentDelay.coverage(cash: cash, incomes: other + [(original, job.expectedNet)], bills: charges, now: now, through: delayed)
         let scenario = PaymentDelay.coverage(cash: cash, incomes: other + [(delayed, job.expectedNet)], bills: charges, now: now, through: delayed)
         Section("If the payment is late") {
