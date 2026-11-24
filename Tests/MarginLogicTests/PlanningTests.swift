@@ -69,6 +69,15 @@ import Testing
         #expect(QuoteEstimate.calculate(hours: 10, hourly: 80, costs: 10, reservePercent: 100) == nil)
     }
 
+    @Test func statementAndPlanningFieldsAcceptCurrencyFormattedZero() {
+        #expect(planningNumber("$0.00", signed: true) == 0)
+        #expect(planningNumber("USD 0") == 0)
+        #expect(planningNumber("0,00 €") == 0)
+        #expect(planningNumber("Invoice 0.00") == nil)
+        #expect(planningNumber("0.001") == nil)
+        #expect(Double(moneyInput: "$0.00") == nil)
+    }
+
     @Test func closeSeparatesOwnerTransfersAndRefunds() {
         let now = date(6, 4)
         let rows = [LedgerEntry(date: now, amount: 1000, category: "", isIncome: true, ledgerScope: "business", incomeKind: "gross"),

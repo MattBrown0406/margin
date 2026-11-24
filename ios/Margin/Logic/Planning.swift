@@ -5,8 +5,7 @@ func planningNumber(_ text: String, signed: Bool = false) -> Double? {
     let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let negative = signed && (raw.hasPrefix("-") || raw.hasPrefix("−"))
     let digits = negative ? String(raw.dropFirst()) : raw
-    if digits.range(of: #"^0+([.,]0+)?$"#, options: .regularExpression) != nil { return 0 }
-    guard let number = Double(moneyInput: digits) else { return nil }
+    guard let number = Double(moneyInput: digits, allowZero: true) else { return nil }
     return negative ? -number : number
 }
 
