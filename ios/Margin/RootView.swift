@@ -12,14 +12,15 @@ struct RootView: View {
     @Query private var allocations: [NetAllocation]
     @AppStorage("margin.seeded") private var seeded = false
     @AppStorage("margin.ledgerV2Migrated") private var ledgerV2Migrated = false
+    @State private var referenceDay = Date.now
     @State private var selectedTab = 0
     @State private var showAdd = false
 
-    private var widgetSnapshot: WidgetSnapshot { WidgetSnapshot(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: .now) }
+    private var widgetSnapshot: WidgetSnapshot { WidgetSnapshot(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: referenceDay) }
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            NavigationStack { TodayView(transactions: transactions, categories: categories, goals: goals, bookedJobs: bookedJobs) }
+            NavigationStack { TodayView(referenceDay: referenceDay, transactions: transactions, categories: categories, goals: goals, bookedJobs: bookedJobs) }
                 .tabItem { Label("Today", systemImage: "sun.max.fill") }.tag(0)
             NavigationStack { PlanView(transactions: transactions, categories: categories, bookedJobs: bookedJobs) }
                 .tabItem { Label("Plan", systemImage: "chart.pie.fill") }.tag(1)
@@ -41,8 +42,9 @@ struct RootView: View {
         .onChange(of: transactions.count) { removeSyncDuplicates() }
         // Keep the widget current whenever today's numbers change, and when returning to the app.
         .onChange(of: widgetSnapshot, initial: true) { _, snapshot in WidgetBridge.publish(snapshot) }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in referenceDay = .now }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { WidgetBridge.publish(widgetSnapshot) }
+            if phase == .active { referenceDay = .now; WidgetBridge.publish(widgetSnapshot) }
             // Reminders are rebuilt from the latest numbers whenever the app opens or goes to the background.
             if phase == .active || phase == .background { Task { await Reminders.reschedule(context: context) } }
         }
@@ -163,6 +165,7 @@ struct RootView: View {
 }
 
 struct TodayView: View {
+    let referenceDay: Date
     @Environment(\.modelContext) private var context
     let transactions: [Transaction]; let categories: [BudgetCategory]; let goals: [SavingsGoal]; let bookedJobs: [BookedJob]
     @State private var showAfford = false
@@ -171,7 +174,7 @@ struct TodayView: View {
     @Query private var settingsList: [FinanceSettings]
     private var personalExpenses: [Transaction] { transactions.filter { !$0.isIncome && $0.ledgerScope == "personal" && Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) } }
     private var monthExpenses: Double { personalExpenses.reduce(0) { $0 + $1.amount } }
-    private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: .now) }
+    private var safe: SafeToSpend { .compute(entries: transactions.map(\.ledgerEntry), lines: categories.map(\.planLine), now: referenceDay) }
     private var shortfall: ForecastMonth? {
         CashFlowForecast.firstShortfall(MoneyFacts(transactions: transactions, categories: categories, bookedJobs: bookedJobs, allocations: allocations,
                                                    settings: FinanceSettings.pick(settingsList), months: 3).forecast)

@@ -4,8 +4,12 @@ import SwiftData
 struct JobQuoteView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @State private var references = Set<UUID>()
-    @State private var hours = "", rate = "", reserve = "0"
-    @State private var travel = "", contractors = "", other = ""
+    @State private var hours = ""
+    @State private var rate = ""
+    @State private var reserve = "0"
+    @State private var travel = ""
+    @State private var contractors = ""
+    @State private var other = ""
     @State private var editingHours: Transaction?
 
     private var receipts: [Transaction] {
@@ -49,9 +53,9 @@ struct JobQuoteView: View {
                 field("Profit to set aside (%)", $reserve)
             } header: { Text("Target take-home") }
             Section {
-                field("Travel and lodging ($)", $travel, fallback: history.travel)
-                field("Contractors ($)", $contractors, fallback: history.contractors)
-                field("Other job costs ($)", $other, fallback: history.other)
+                field("Travel and lodging ($)", $travel, fallback: history.suggested(history.travel))
+                field("Contractors ($)", $contractors, fallback: history.suggested(history.contractors))
+                field("Other job costs ($)", $other, fallback: history.suggested(history.other))
             } header: { Text("Expected costs") } footer: { Text("Blank cost fields use the selected jobs’ averages. Enter a value to override an average.") }
             Section("Minimum quote") {
                 if let estimate = estimate(history) {
@@ -74,8 +78,8 @@ struct JobQuoteView: View {
     private func estimate(_ history: QuoteHistory) -> QuoteEstimate? {
         func number(_ text: String, fallback: Double?) -> Double? { text.isEmpty ? fallback : planningNumber(text) }
         guard let hours = number(hours, fallback: history.hours), let hourly = planningNumber(rate), let percent = planningNumber(reserve),
-              let travel = number(travel, fallback: max(0, history.travel)), let contractor = number(contractors, fallback: max(0, history.contractors)),
-              let other = number(other, fallback: max(0, history.other)) else { return nil }
+              let travel = number(travel, fallback: history.suggested(history.travel)), let contractor = number(contractors, fallback: history.suggested(history.contractors)),
+              let other = number(other, fallback: history.suggested(history.other)) else { return nil }
         return QuoteEstimate.calculate(hours: hours, hourly: hourly, costs: travel + contractor + other, reservePercent: percent)
     }
 }
@@ -84,6 +88,7 @@ private struct QuoteHistory {
     let gross: Double, travel: Double, contractors: Double, other: Double
     let hours: Double?
     let countWithHours: Int
+    func suggested(_ average: Double) -> Double { (max(0, average) * 100).rounded() / 100 }
     var profit: Double { gross - travel - contractors - other }
     init(receipts: [Transaction], expenses: [Transaction]) {
         let count = Double(max(1, receipts.count))
@@ -93,7 +98,7 @@ private struct QuoteHistory {
         other = expenses.filter { !["Travel", "Lodging", "Contractor"].contains($0.category) }.reduce(0) { $0 + $1.amount } / count
         let known = receipts.compactMap(\.workHours).filter { $0 > 0 }
         countWithHours = known.count
-        hours = known.isEmpty ? nil : known.reduce(0, +) / Double(known.count)
+        hours = known.isEmpty ? nil : (known.reduce(0, +) * 100 / Double(known.count)).rounded() / 100
     }
 }
 

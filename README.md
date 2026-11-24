@@ -34,6 +34,13 @@ Margin answers one useful daily question: **What can I safely spend today and st
   - **Net worth**: what you own (entered or from connected accounts) minus what you owe, with a monthly trend
 - Plan › Bills lists what's due before the next job pays and recurring charges found in your transactions (subscriptions, price increases, charges that may have stopped)
 
+### Native planning and reporting
+
+- Tap **Safe to Spend** on Today to see how the number changed since yesterday. A comparison without a saved observation is labeled as an estimate.
+- In **Plan › Forecast › Test a late payment**, choose a job, enter cash available for bills, and compare a two- or four-week delay with on-time payment.
+- In **Reports › Month-end close**, reconcile both ledgers to their statements, match the month’s entries, and save or export a dated accountant copy. Revised closes preserve earlier copies.
+- In **Reports › Quote a job**, select similar paid jobs, record their actual hours, and estimate a quote from job costs, target take-home per hour, and a chosen reserve percentage.
+
 ## Interactive HTML prototype
 Open `web/index.html` directly, or run:
 
@@ -79,7 +86,7 @@ The app now uses capabilities that need a paid Apple Developer team. In Xcode, s
 | Sign in with Apple | — | Signing in to the bank service and Ask Stabilis |
 | Background Modes › Remote notifications | — | CloudKit sync pushes |
 
-Before a TestFlight or App Store build, open the CloudKit Console and **deploy the schema from Development to Production**; otherwise production sync fails silently. New record types (FinanceSettings, Debt, Asset, NetWorthSnapshot, NetAllocation, EstimatedTaxPayment, MerchantRule) and new fields (FinanceSettings reminders and `taxSetAsideSince`, Transaction `externalName`) need this deploy too. Run the app once in Development after any model change so the schema is up to date.
+Before a TestFlight or App Store build, open the CloudKit Console and **deploy the schema from Development to Production**; otherwise production sync fails silently. New record types (FinanceSettings, Debt, Asset, NetWorthSnapshot, NetAllocation, EstimatedTaxPayment, MerchantRule, ClosedMonth) and new fields (FinanceSettings reminders and `taxSetAsideSince`, Transaction `externalName` and `workHours`) need this deploy too. Run the app once in Development after any model change so the schema is up to date.
 
 If you change the bundle prefix, update `ios/Margin/Margin.entitlements`, `ios/MarginWidget/MarginWidget.entitlements`, and `WidgetSnapshot.appGroup`. Without iCloud the app quietly keeps data on the device; sync can also be turned off in Settings.
 

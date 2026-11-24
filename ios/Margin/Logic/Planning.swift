@@ -89,11 +89,17 @@ struct QuoteEstimate {
     static func calculate(hours: Double, hourly: Double, costs: Double, reservePercent: Double) -> QuoteEstimate? {
         guard hours > 0, hourly > 0, costs >= 0, (0..<100).contains(reservePercent) else { return nil }
         // Reserve is a share of profit after job costs. Round the customer's quote up to the next cent.
-        let takeHome = hours * hourly
-        let raw = costs + takeHome / (1 - reservePercent / 100)
-        guard raw.isFinite, raw < Double(1 << 52) / 100 else { return nil }
-        let price = (raw * 100 - 0.00000001).rounded(.up) / 100
-        return .init(takeHome: takeHome, reserve: max(0, price - costs - takeHome), minimum: price)
+        let locale = Locale(identifier: "en_US_POSIX")
+        func decimal(_ value: Double) -> Decimal? { Decimal(string: String(value), locale: locale) }
+        guard let time = decimal(hours), let pay = decimal(hourly), let expenses = decimal(costs), let percent = decimal(reservePercent) else { return nil }
+        let takeHome = time * pay
+        var raw = expenses + takeHome / (1 - percent / 100)
+        guard !raw.isNaN, raw < 45_035_996_273_704 else { return nil }
+        var price = Decimal()
+        NSDecimalRound(&price, &raw, 2, .up)
+        return .init(takeHome: NSDecimalNumber(decimal: takeHome).doubleValue,
+                     reserve: NSDecimalNumber(decimal: price - expenses - takeHome).doubleValue,
+                     minimum: NSDecimalNumber(decimal: price).doubleValue)
     }
 }
 
